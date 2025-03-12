@@ -1,0 +1,15 @@
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\bin\Debug\net9.0\Ship.Ses.Transmitter.Application.deps.json
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\bin\Debug\net9.0\Ship.Ses.Transmitter.Application.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\bin\Debug\net9.0\Ship.Ses.Transmitter.Application.pdb
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\bin\Debug\net9.0\Ship.Ses.Transmitter.Domain.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\bin\Debug\net9.0\Ship.Ses.Transmitter.Domain.pdb
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.csproj.AssemblyReference.cache
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.GeneratedMSBuildEditorConfig.editorconfig
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.AssemblyInfoInputs.cache
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.AssemblyInfo.cs
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.csproj.CoreCompileInputs.cache
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.5DC01B59.Up2Date
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\refint\Ship.Ses.Transmitter.Application.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.pdb
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\ref\Ship.Ses.Transmitter.Application.dll

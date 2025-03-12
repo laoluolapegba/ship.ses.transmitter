@@ -1,0 +1,57 @@
+﻿using Ship.Ses.Transmitter.Application.Shared;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
+using Microsoft.Extensions.Options;
+using System.Net;
+using System.Net.Mail;
+
+namespace Ship.Ses.Transmitter.Infrastructure.Shared
+{
+    public class EmailService : IEmailService
+    {
+        private readonly Smtp _smtp;
+        private readonly IEmailTemplateFactory _emailTemplateFactory;
+
+        public EmailService(IOptions<AppSettings> appSettings, IEmailTemplateFactory emailTemplateFactory)
+        {
+            _smtp = appSettings.Value.Smtp;
+            _emailTemplateFactory = emailTemplateFactory;
+        }
+
+        public async Task SendEmailAsync(string to, string subject, string body)
+        {
+            using (var client = new SmtpClient(_smtp.Server, _smtp.Port))
+            {
+                client.Credentials = new NetworkCredential(_smtp.User, _smtp.Password);
+                client.EnableSsl = _smtp.EnableSsl;
+
+                var mailMessage = new MailMessage
+                {
+                    From = new MailAddress(_smtp.EmailFrom),
+                    Subject = subject,
+                    Body = body,
+                    IsBodyHtml = true
+                };
+
+                mailMessage.To.Add(to);
+
+                await client.SendMailAsync(mailMessage);
+            }
+        }
+
+        public async Task SendWelcomeEmail(string to, Dictionary<string, string> replacements)
+        {
+            var emailTitle = "Welcome to Our Service!";
+            var htmlTemplate = await _emailTemplateFactory.GetTemplateAsync(Domain.Enums.EmailTemplateType.WelcomeEmail);
+
+            foreach (var replacement in replacements)
+            {
+                htmlTemplate = htmlTemplate.Replace($"{{{{{replacement.Key}}}}}", replacement.Value);
+            }
+
+            await SendEmailAsync(
+                to,
+                emailTitle,
+                htmlTemplate);
+        }
+    }
+}

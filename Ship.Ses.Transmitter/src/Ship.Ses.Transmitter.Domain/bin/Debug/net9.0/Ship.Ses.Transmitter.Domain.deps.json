@@ -1,0 +1,23 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v9.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v9.0": {
+      "Ship.Ses.Transmitter.Domain/1.0.0": {
+        "runtime": {
+          "Ship.Ses.Transmitter.Domain.dll": {}
+        }
+      }
+    }
+  },
+  "libraries": {
+    "Ship.Ses.Transmitter.Domain/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}

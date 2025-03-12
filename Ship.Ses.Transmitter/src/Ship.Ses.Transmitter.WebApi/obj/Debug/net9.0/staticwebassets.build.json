@@ -1,0 +1,12 @@
+{
+  "Version": 1,
+  "Hash": "iNg+xIUw1PdPZYH+8UQMis6on1ItJvfzNJRKgYKHaCY=",
+  "Source": "Ship.Ses.Transmitter.WebApi",
+  "BasePath": "_content/Ship.Ses.Transmitter.WebApi",
+  "Mode": "Default",
+  "ManifestType": "Build",
+  "ReferencedProjectsConfiguration": [],
+  "DiscoveryPatterns": [],
+  "Assets": [],
+  "Endpoints": []
+}

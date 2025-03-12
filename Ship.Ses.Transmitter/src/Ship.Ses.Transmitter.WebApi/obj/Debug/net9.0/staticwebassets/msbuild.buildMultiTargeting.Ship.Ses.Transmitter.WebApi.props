@@ -1,0 +1,3 @@
+﻿<Project>
+  <Import Project="..\build\Ship.Ses.Transmitter.WebApi.props" />
+</Project>

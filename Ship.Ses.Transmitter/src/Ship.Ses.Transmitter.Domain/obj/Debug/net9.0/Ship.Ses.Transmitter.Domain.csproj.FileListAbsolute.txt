@@ -1,0 +1,11 @@
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\bin\Debug\net9.0\Ship.Ses.Transmitter.Domain.deps.json
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\bin\Debug\net9.0\Ship.Ses.Transmitter.Domain.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\bin\Debug\net9.0\Ship.Ses.Transmitter.Domain.pdb
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.GeneratedMSBuildEditorConfig.editorconfig
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.AssemblyInfoInputs.cache
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.AssemblyInfo.cs
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.csproj.CoreCompileInputs.cache
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\refint\Ship.Ses.Transmitter.Domain.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.pdb
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Domain\obj\Debug\net9.0\ref\Ship.Ses.Transmitter.Domain.dll
