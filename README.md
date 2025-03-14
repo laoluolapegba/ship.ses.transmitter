@@ -54,7 +54,7 @@ ship.ses.transmitter/
 
 ### **Clone the Repository**
 ```sh
-git clone https://github.com/your-org/ship.ses.transmitter.git
+git clone https://github.com/laoluolapegba/ship.ses.transmitter.git
 cd ship.ses.transmitter
 ```
 
