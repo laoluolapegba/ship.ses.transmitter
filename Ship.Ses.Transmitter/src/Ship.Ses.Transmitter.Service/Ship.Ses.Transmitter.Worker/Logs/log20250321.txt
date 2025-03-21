@@ -1,0 +1,17 @@
+[08:28:37 DBG] Hosting starting
+[08:50:52 DBG] Hosting starting
+[16:01:11 DBG] Hosting starting
+[16:20:41 DBG] Hosting starting
+[16:20:41 INF] 🚀 Starting FHIR Sync Worker for "Patient"
+[16:20:42 INF] 🔄 Syncing records for "Patient" | CorrelationId: 485d41e2-0f6a-4895-9001-57536841c278
+[16:20:42 INF] Application started. Press Ctrl+C to shut down.
+[16:20:42 INF] Hosting environment: Development
+[16:20:42 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[16:20:42 DBG] Hosting started
+[16:21:42 INF] 🔄 Syncing records for "Patient" | CorrelationId: 756ed9c5-cd7c-4fff-9efd-3bfda10c5b4c
+[16:22:42 INF] 🔄 Syncing records for "Patient" | CorrelationId: ea466bd5-b6f9-4ea8-b1b3-e4b91c560ef4
+[16:23:42 INF] 🔄 Syncing records for "Patient" | CorrelationId: 3bbb7f3c-339d-4350-b2f2-68f245e54959
+[16:26:39 INF] 🔄 Syncing records for "Patient" | CorrelationId: 46e261fb-2219-4f57-af31-fa0f73f13574
+[16:27:06 INF] Application is shutting down...
+[16:27:06 DBG] Hosting stopping
+[16:27:06 DBG] Hosting stopped

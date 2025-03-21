@@ -1,0 +1,17 @@
+2025-03-21 08:28:37.274 +00:00 [DBG] Hosting starting
+2025-03-21 08:50:52.554 +00:00 [DBG] Hosting starting
+2025-03-21 16:01:11.707 +00:00 [DBG] Hosting starting
+2025-03-21 16:20:41.388 +00:00 [DBG] Hosting starting
+2025-03-21 16:20:41.578 +00:00 [INF] 🚀 Starting FHIR Sync Worker for "Patient"
+2025-03-21 16:20:42.235 +00:00 [INF] 🔄 Syncing records for "Patient" | CorrelationId: 485d41e2-0f6a-4895-9001-57536841c278
+2025-03-21 16:20:42.402 +00:00 [INF] Application started. Press Ctrl+C to shut down.
+2025-03-21 16:20:42.406 +00:00 [INF] Hosting environment: Development
+2025-03-21 16:20:42.410 +00:00 [INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+2025-03-21 16:20:42.416 +00:00 [DBG] Hosting started
+2025-03-21 16:21:42.548 +00:00 [INF] 🔄 Syncing records for "Patient" | CorrelationId: 756ed9c5-cd7c-4fff-9efd-3bfda10c5b4c
+2025-03-21 16:22:42.562 +00:00 [INF] 🔄 Syncing records for "Patient" | CorrelationId: ea466bd5-b6f9-4ea8-b1b3-e4b91c560ef4
+2025-03-21 16:23:42.581 +00:00 [INF] 🔄 Syncing records for "Patient" | CorrelationId: 3bbb7f3c-339d-4350-b2f2-68f245e54959
+2025-03-21 16:26:39.675 +00:00 [INF] 🔄 Syncing records for "Patient" | CorrelationId: 46e261fb-2219-4f57-af31-fa0f73f13574
+2025-03-21 16:27:06.923 +00:00 [INF] Application is shutting down...
+2025-03-21 16:27:06.925 +00:00 [DBG] Hosting stopping
+2025-03-21 16:27:06.937 +00:00 [DBG] Hosting stopped
