@@ -54,7 +54,7 @@ ship.ses.transmitter/
 
 ### **Clone the Repository**
 ```sh
-git clone https://github.com/your-org/ship.ses.transmitter.git
+git clone https://github.com/laoluolapegba/ship.ses.transmitter.git
 cd ship.ses.transmitter
 ```
 
@@ -120,14 +120,6 @@ Example `appsettings.json`:
 }
 ```
 
----
-
-## Authentication
-All API requests require **OAuth2 Bearer Tokens**.
-
-### **Example Authorization Header**
-```http
-Authorization: Bearer <ACCESS_TOKEN>
 ```
 
 ---
@@ -178,13 +170,13 @@ az aks deploy --name ses-transmitter --image mycontainerregistry/ses-transmitter
 ---
 
 ## License
-📜 **MIT License** – Open-source for community and enterprise use.
+📜 **
 
 ---
 
 ## Contacts & Support
-- 📧 **Support**: support@ses.io
-- 🚀 **Contributors**: @yourteam  
+- 📧 **Support**: support@
+- 🚀 **Contributors**: @
 - 📚 **Docs**: [Confluence Page](https://confluence.ses.io/docs)
 
 ---
