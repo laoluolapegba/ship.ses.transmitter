@@ -15,7 +15,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Ship.Ses.Transmitter.Worker")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+61a7d5cd98543a944ddaf5c1150c8bd97ea2a62b")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+9bc536b06dccebaf4795b3f3279965f122260ea6")]
 [assembly: System.Reflection.AssemblyProductAttribute("Ship.Ses.Transmitter.Worker")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Ship.Ses.Transmitter.Worker")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
