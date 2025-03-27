@@ -39,7 +39,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     record.Status = "Synced";
                     record.TimeSynced = DateTime.UtcNow;
                     await _repository.UpdateRecordAsync(record);
-                    _logger.LogInformation($"Updated resource {record.ResourceId} ...");
+                    _logger.LogInformation($"Updated resource {record.ResourceId} ..."); 
+
                 }
                 catch (Exception ex)
                 {
