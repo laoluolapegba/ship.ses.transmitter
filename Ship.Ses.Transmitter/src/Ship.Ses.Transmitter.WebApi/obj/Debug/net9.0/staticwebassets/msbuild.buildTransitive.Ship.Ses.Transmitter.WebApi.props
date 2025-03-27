@@ -1,3 +1,0 @@
-﻿<Project>
-  <Import Project="..\buildMultiTargeting\Ship.Ses.Transmitter.WebApi.props" />
-</Project>
