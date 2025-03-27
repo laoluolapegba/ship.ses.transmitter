@@ -15,3 +15,221 @@
 [16:27:06 INF] Application is shutting down...
 [16:27:06 DBG] Hosting stopping
 [16:27:06 DBG] Hosting stopped
+[20:02:17 DBG] Hosting starting
+[20:02:17 INF] 🚀 Starting FHIR Sync Worker for "Patient"
+[20:02:17 INF] 🔄 Syncing records for "Patient" | CorrelationId: fcbffcd1-b148-421d-a265-a0573dcc50a2
+[20:02:17 INF] Application started. Press Ctrl+C to shut down.
+[20:02:17 INF] Hosting environment: Development
+[20:02:17 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[20:02:17 DBG] Hosting started
+[20:03:17 INF] 🔄 Syncing records for "Patient" | CorrelationId: 51cc8495-d352-439b-8b81-2e410e686889
+[20:04:17 INF] 🔄 Syncing records for "Patient" | CorrelationId: f5d28263-1a4e-4590-9510-18cd45c6ae69
+[20:05:17 INF] 🔄 Syncing records for "Patient" | CorrelationId: d0e64425-56b3-4e5c-ba65-0e3f5abb76a8
+[20:06:17 INF] 🔄 Syncing records for "Patient" | CorrelationId: f76cfc52-fb01-4e56-966b-de3efbf2aeaa
+[20:07:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: c73d20c3-180c-4b03-bdb3-2c22b6185e57
+[20:08:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 98b74ff6-d59c-4201-9f97-9af06617bd91
+[20:09:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: dbbd3ace-2e6b-4088-bfc0-34d7cadd18e5
+[20:10:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: a69d54a7-7668-4873-9516-5dd7925cdfce
+[20:11:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 3fc1b675-afed-4d89-9bdb-5ea123d743c0
+[20:12:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 5b4d8795-1d45-4696-b325-812fcc241b70
+[20:13:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 4573951b-4e34-4c8c-aeb3-ba23cfdec73b
+[20:14:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 5e8536a9-f68c-4c4a-9246-a475d488baf1
+[20:15:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: 38735bd2-5592-41b1-9014-492ae17baecf
+[20:16:18 INF] 🔄 Syncing records for "Patient" | CorrelationId: fd4af81b-84c5-4f99-b720-1a1262c11140
+[20:16:51 INF] Application is shutting down...
+[20:16:51 DBG] Hosting stopping
+[20:16:51 DBG] Hosting stopped
+[20:17:23 DBG] Hosting starting
+[20:17:23 INF] 🚀 Starting FHIR Sync Worker for "Patient"
+[20:17:23 INF] 🔄 Syncing records for "Patient" | CorrelationId: 367e96f2-96f7-4b51-8097-d6549757a167
+[20:17:23 INF] Application started. Press Ctrl+C to shut down.
+[20:17:23 INF] Hosting environment: Development
+[20:17:23 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[20:17:23 DBG] Hosting started
+[20:18:23 INF] 🔄 Syncing records for "Patient" | CorrelationId: 68198fa0-50ac-41eb-ac9d-a2bc3f9df7ed
+[20:18:29 INF] Application is shutting down...
+[20:18:29 DBG] Hosting stopping
+[20:18:29 DBG] Hosting stopped
+[20:19:04 DBG] Hosting starting
+[20:19:04 INF] 🚀 Starting FHIR Sync Worker for "Patient"
+[20:19:05 INF] 🔄 Syncing records for "Patient" | CorrelationId: 08ca5f85-634b-4172-8c88-c49f9a0a20a9
+[20:19:05 INF] Application started. Press Ctrl+C to shut down.
+[20:19:05 INF] Hosting environment: Development
+[20:19:05 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[20:19:05 DBG] Hosting started
+[20:20:05 INF] 🔄 Syncing records for "Patient" | CorrelationId: e1411c31-a7be-44c4-8c32-b014a4eb699c
+[20:21:05 INF] 🔄 Syncing records for "Patient" | CorrelationId: aa9786aa-9a75-4b03-be7a-157eb3e357fb
+[20:22:01 INF] Application is shutting down...
+[20:22:01 DBG] Hosting stopping
+[20:22:01 DBG] Hosting stopped
+[20:23:43 DBG] Hosting starting
+[20:23:43 INF] 🚀 Starting FHIR Sync Worker for "Encounter"
+[20:23:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 249386f4-83db-4e38-8cf7-f6fbf6b126b2
+[20:23:43 INF] Application started. Press Ctrl+C to shut down.
+[20:23:43 INF] Hosting environment: Development
+[20:23:43 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[20:23:43 DBG] Hosting started
+[20:24:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: fd5fd4c6-5f60-4c60-90c3-20aa7831b644
+[20:25:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 67c89e1a-a81e-466b-bc9e-547be3869bd6
+[20:26:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 2ff63d18-73b5-43ac-a670-a1efc421f6b9
+[20:27:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 8b73b9d7-47d8-4fb9-af33-75c3aa9b8295
+[20:28:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 3a7ee510-aa11-4f8e-998c-e1a119005241
+[20:29:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 7891d243-6b6a-4c20-acf3-90494ca2891d
+[20:30:43 INF] 🔄 Syncing records for {:ResourceType:} | :CorrelationId: 660faf56-033e-4ab7-852a-543a938af894
+[20:31:07 INF] Application is shutting down...
+[20:31:07 DBG] Hosting stopping
+[20:31:07 DBG] Hosting stopped
+[20:33:02 DBG] Hosting starting
+[20:33:02 INF] 🚀 Starting FHIR Sync Worker for "Encounter"
+[20:33:02 INF] 🔄 Syncing records for "Encounter" | CorrelationId: f54220d9-0f12-4f17-927a-9f189c6dd515
+[20:33:03 INF] Application started. Press Ctrl+C to shut down.
+[20:33:03 INF] Hosting environment: Development
+[20:33:03 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[20:33:03 DBG] Hosting started
+[20:34:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 9624d4e6-cdc3-4e7e-8aa2-c38fe58c1023
+[20:35:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 25676b61-14fd-4131-9421-9f33f6273b50
+[20:36:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 8f809b1b-7a56-4898-9cf3-e0009efdfb75
+[20:37:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: dc7ecda6-ce60-4936-ba90-1134bbdc9b55
+[20:38:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 5ce75e47-87a7-4f75-89f3-38f2082fd3d6
+[20:39:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: d3b9b902-ca91-4eda-b61b-8efb212c9bd6
+[20:40:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 00a1f041-c24f-40f3-9ccd-6ade3c863dd5
+[20:41:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 29f6937b-8c01-442f-800c-cbb46ec15867
+[20:42:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: aba859c1-405a-4ee5-a97b-0b2affe69724
+[20:43:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 4f3154bc-8e70-41b6-ad4d-ce64d789e2cd
+[20:44:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 5646c598-c2ca-4cfb-a468-724e2901b758
+[20:45:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: cbea3bf9-02d0-4702-8c8f-abcd0e6437b7
+[20:46:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 7b35298e-0d82-43b3-9734-e374d42f4ccd
+[20:47:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 79f33282-809b-4aaa-a25a-da199a25d47a
+[20:48:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 968dcc58-88f6-4d97-b92f-efca1c5d76c0
+[20:49:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 53b42592-5e7c-427d-9ffb-d2f792b73422
+[20:50:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 357d7f5e-9f12-4bfe-b8d0-9e8ba4e30933
+[20:51:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: ad5e7d98-1a3a-4720-8ecd-b6cf8747e302
+[20:52:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 55d438b4-965f-4652-b464-b947edb7aaf5
+[20:53:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 10727c7f-00b9-4997-bdd6-e4df7487fb95
+[20:54:56 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 57fceb43-9927-4076-9199-4dfde1afef25
+[20:57:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: bd71812d-b2ef-4ea4-86a5-f9b242083d89
+[20:58:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 98967597-4564-4b3d-b13c-8a77eaf4bcc9
+[20:59:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 262c05ac-5f4c-43b1-8a8f-fd5f52e67f02
+[21:00:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: be053b55-9a79-488a-ac90-c21d2d745cf3
+[21:01:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: dc412d26-f3da-4ab8-855e-96753898d50b
+[21:02:03 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 93b7009c-7e1c-41aa-bda0-f5781d1f4866
+[21:03:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 3dfce781-e1b8-4982-98a2-5732e54100b6
+[21:04:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 4dcfbfd0-a1b5-48d2-9422-37da45b21372
+[21:05:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 62a7980b-6f87-4ffc-b476-00f6be37aa13
+[21:06:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 44d976fd-68e2-476b-830c-5b868dd9a7ef
+[21:07:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 16d6ba0f-e2cc-4c6d-86ce-20c2711e266b
+[21:08:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 2f4ad095-2ec8-488a-a227-b2c8718bda3a
+[21:09:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: b835fdda-bae5-47e3-a30d-18112a27eac3
+[21:10:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 533c0ff5-4309-43c7-be59-1bc74fc7d873
+[21:11:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 7a9eb330-ae94-47c1-9bcd-e2fbfa5ba90c
+[21:12:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: ff8c3c6b-03a2-4efb-bffd-1c3537358e4f
+[21:13:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: deec8062-d59a-4382-b590-1043cbacd4b0
+[21:14:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 62061fe4-0e9c-4432-a954-e002615fadcb
+[21:15:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 025bf85a-4f26-4447-af15-51dc2f1d366c
+[21:16:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: f0e40254-afa3-4963-a63a-c56715faa660
+[21:17:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: abd78166-e62c-480a-89da-3cdfd9cc259d
+[21:18:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 022dd07a-a3ea-4e04-8851-0090fcef567b
+[21:19:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 8735d224-34b6-4935-b14c-abe1b685eb30
+[21:20:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 58166f39-82cd-4ee8-8152-364178c33d5b
+[21:21:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 0c8a5198-fa91-460f-a562-e3f44e7e3bb2
+[21:22:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 24610bc5-527f-4955-ad35-716ad660c6d7
+[21:23:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: e49fbf87-3ad5-4d6e-a4e9-cea2e367ff48
+[21:24:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 15e6bdfa-a213-4327-92bc-9fb061f08dc3
+[21:25:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 1b3d83a7-751b-4683-8667-bad598fb55a3
+[21:26:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: b3650e61-c9af-4f91-8a77-866945a53405
+[21:27:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 37b82428-f1df-4c05-bfb6-1b001162fa45
+[21:28:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 6cb49187-87af-4f7f-a350-bc8cbe6ed4f0
+[21:29:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 855e6be6-68a6-450f-ac98-6caf86928a1b
+[21:30:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 42fe8466-e437-4ce9-8b84-90948f269ec9
+[21:31:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 16a133f9-02ac-4c00-a9ec-ba8684ff8ac5
+[21:32:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 115efbfe-9f47-4edc-bb90-994710831c2c
+[21:33:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 506db61e-1a13-4804-ad70-fe808cc5f9aa
+[21:34:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 68418441-ce81-40ef-bf37-a1c14fd12927
+[21:35:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: c92a5939-31cb-48b7-bc88-00d09604cb09
+[21:36:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: b55f4aa1-3f42-4fbb-a2c2-818375802b01
+[21:37:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 423a30c9-618a-4532-9700-22a92837fca9
+[21:38:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 7c8092f4-0fd5-48dc-ab29-e6079162ebcd
+[21:39:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 7bb1e852-63bb-454b-8e64-9ccffc7f2979
+[21:40:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 0a470f5b-1945-43b2-b8dc-8d74c2ce483f
+[21:41:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 83b6d033-d7b3-4160-b3a8-204ddbe4ee59
+[21:42:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: ce831245-a5b0-4b57-a068-1cf0b1091454
+[21:43:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 37dcc781-669b-4db7-8ed4-c475e9de9296
+[21:44:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: e4ccc666-f947-4afe-ac85-6e98019a934c
+[21:45:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: f8cbd689-68e8-487c-9d5b-b2ab32735614
+[21:46:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 29644f7b-ff36-49b3-935f-340daf754ea5
+[21:47:04 INF] 🔄 Syncing records for "Encounter" | CorrelationId: 8b91bc52-6475-4ea3-9f76-539baf2f0891
+[21:48:01 INF] Application is shutting down...
+[21:48:01 DBG] Hosting stopping
+[21:48:01 DBG] Hosting stopped
+[21:51:01 DBG] Hosting starting
+[21:51:01 INF] 🚀 Starting Patient Sync Worker...
+[21:51:02 INF] Application started. Press Ctrl+C to shut down.
+[21:51:02 INF] Hosting environment: Development
+[21:51:02 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[21:51:02 DBG] Hosting started
+[21:54:01 INF] Application is shutting down...
+[21:54:01 DBG] Hosting stopping
+[21:54:01 DBG] Hosting stopped
+[21:55:50 DBG] Hosting starting
+[21:55:50 INF] 🚀 Starting Patient Sync Worker...
+[21:55:50 INF] Getting pending records ...
+[21:55:50 INF] Application started. Press Ctrl+C to shut down.
+[21:55:50 INF] Hosting environment: Development
+[21:55:50 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[21:55:50 DBG] Hosting started
+[21:55:50 INF] Got 0 pending records ...
+[21:56:50 INF] Getting pending records ...
+[21:56:50 INF] Got 0 pending records ...
+[21:57:50 INF] Getting pending records ...
+[21:57:50 INF] Got 0 pending records ...
+[21:58:50 INF] Getting pending records ...
+[21:58:50 INF] Got 0 pending records ...
+[21:59:50 INF] Getting pending records ...
+[21:59:50 INF] Got 0 pending records ...
+[22:00:50 INF] Getting pending records ...
+[22:00:50 INF] Got 0 pending records ...
+[22:01:21 INF] Application is shutting down...
+[22:01:21 DBG] Hosting stopping
+[22:01:21 DBG] Hosting stopped
+[22:04:36 DBG] Hosting starting
+[22:04:36 INF] 🚀 Starting Patient Sync Worker...
+[22:04:36 INF] 🚀 collection... {_settings.CollectionName}
+[22:04:36 INF] Getting pending records ...
+[22:04:36 INF] Application started. Press Ctrl+C to shut down.
+[22:04:36 INF] Hosting environment: Development
+[22:04:36 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[22:04:36 DBG] Hosting started
+[22:04:36 INF] Got 0 pending records ...
+[22:05:01 INF] Application is shutting down...
+[22:05:01 DBG] Hosting stopping
+[22:05:01 DBG] Hosting stopped
+[22:06:40 DBG] Hosting starting
+[22:06:41 INF] 🚀 Starting Patient Sync Worker...
+[22:06:41 INF] 🚀 collection... transformed_pool_patients
+[22:06:41 INF] Getting pending records ...
+[22:06:41 INF] Application started. Press Ctrl+C to shut down.
+[22:06:41 INF] Hosting environment: Development
+[22:06:41 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[22:06:41 DBG] Hosting started
+[22:06:41 INF] Got 0 pending records ...
+[22:06:51 INF] Application is shutting down...
+[22:06:51 DBG] Hosting stopping
+[22:06:51 DBG] Hosting stopped
+[22:08:08 DBG] Hosting starting
+[22:08:08 INF] 🚀 Starting Patient Sync Worker...
+[22:10:24 INF] 🚀 collection... transformed_pool_patients
+[22:10:24 INF] Getting pending records ...
+[22:10:24 INF] Application started. Press Ctrl+C to shut down.
+[22:10:24 INF] Hosting environment: Development
+[22:10:24 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[22:10:24 DBG] Hosting started
+[22:10:24 INF] Got 0 pending records ...
+[22:12:42 DBG] Hosting starting
+[22:12:42 INF] 🚀 Starting Patient Sync Worker...
+[22:12:49 INF] 🚀 collection... transformed_pool_patients
+[22:12:49 INF] Getting pending records ...
+[22:12:53 INF] Application started. Press Ctrl+C to shut down.
+[22:12:53 INF] Hosting environment: Development
+[22:12:53 INF] Content root path: C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker
+[22:12:53 DBG] Hosting started
+[22:14:56 INF] Got 0 pending records ...

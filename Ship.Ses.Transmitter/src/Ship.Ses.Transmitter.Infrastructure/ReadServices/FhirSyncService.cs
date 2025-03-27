@@ -22,9 +22,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
         public async Task ProcessPendingRecordsAsync(FhirResourceType resourceType, CancellationToken cancellationToken)
         {
+            _logger.LogInformation($"Getting pending records ...");
             var records = await _repository.GetPendingRecordsAsync(resourceType);
-
-            foreach (var record in records)
+            _logger.LogInformation($"Got {records.Count()} pending records from {resourceType.ToString()}...");
+            foreach (var record in records) 
             {
                 if (cancellationToken.IsCancellationRequested)
                     break;
@@ -38,6 +39,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     record.Status = "Synced";
                     record.TimeSynced = DateTime.UtcNow;
                     await _repository.UpdateRecordAsync(record);
+                    _logger.LogInformation($"Updated resource {record.ResourceId} ...");
                 }
                 catch (Exception ex)
                 {

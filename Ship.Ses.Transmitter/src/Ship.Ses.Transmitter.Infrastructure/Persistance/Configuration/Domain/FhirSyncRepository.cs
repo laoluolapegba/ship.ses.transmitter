@@ -14,12 +14,21 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
     {
         private readonly IMongoCollection<FhirSyncRecord> _collection;
 
-        public FhirSyncRepository(IOptions<SourceDbSettings> settings)
+        public FhirSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
+   : this(client.GetDatabase(settings.Value.DatabaseName), settings.Value.CollectionName)
         {
-            var client = new MongoClient(settings.Value.ConnectionString);
-            var database = client.GetDatabase(settings.Value.DatabaseName);
-            _collection = database.GetCollection<FhirSyncRecord>(settings.Value.CollectionName);
         }
+
+        public FhirSyncRepository(IMongoDatabase database, string collectionName)
+        {
+            _collection = database.GetCollection<FhirSyncRecord>(collectionName);
+        }
+        //public FhirSyncRepository(IMongoCollection<FhirSyncRecord> settings) //IOptions<SourceDbSettings> settings)
+        //{
+        //    var client = new MongoClient(settings.Value.ConnectionString);
+        //    var database = client.GetDatabase(settings.Value.DatabaseName);
+        //    _collection = database.GetCollection<FhirSyncRecord>(settings.Value.CollectionName);
+        //}
 
         public async Task<IEnumerable<FhirSyncRecord>> GetPendingRecordsAsync(FhirResourceType resourceType)
         {

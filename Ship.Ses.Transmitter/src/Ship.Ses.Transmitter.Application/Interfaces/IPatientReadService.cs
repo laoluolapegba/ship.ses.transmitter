@@ -1,4 +1,5 @@
-﻿using Ship.Ses.Transmitter.Domain.Patients;
+﻿
+using Ship.Ses.Transmitter.Domain.Patients;
 using System;
 using System.Collections.Generic;
 using System.Linq;

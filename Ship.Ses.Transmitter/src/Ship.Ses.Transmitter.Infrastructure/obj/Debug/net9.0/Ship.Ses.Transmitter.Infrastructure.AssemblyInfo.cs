@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("Ship.Ses.Transmitter.Infrastructure")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4f89ab9678a5cb8b42a96531acce260f642421d5")]
 [assembly: System.Reflection.AssemblyProductAttribute("Ship.Ses.Transmitter.Infrastructure")]
 [assembly: System.Reflection.AssemblyTitleAttribute("Ship.Ses.Transmitter.Infrastructure")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

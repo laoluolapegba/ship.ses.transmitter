@@ -25,28 +25,7 @@ namespace Ship.Ses.Transmitter.Worker
         {
             _logger.LogInformation("🚀 Starting FHIR Sync Worker for {ResourceType}", _resourceType);
 
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                var correlationId = Guid.NewGuid().ToString();
-                using (LogContext.PushProperty("CorrelationId", correlationId))
-                using (var scope = _serviceProvider.CreateScope())
-                {
-                    try
-                    {
-                        var syncService = scope.ServiceProvider.GetRequiredService<IFhirSyncService>();
-                        _logger.LogInformation("🔄 Syncing records for {ResourceType} | CorrelationId: {CorrelationId}", _resourceType, correlationId);
-                        await syncService.ProcessPendingRecordsAsync(_resourceType, stoppingToken);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "❌ Error processing {ResourceType} | CorrelationId: {CorrelationId}", _resourceType, correlationId);
-                    }
-                }
-            
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-            }
-
-            _logger.LogInformation("🛑 Stopping FHIR Sync Worker for {ResourceType}");
+           
         }
 
     }

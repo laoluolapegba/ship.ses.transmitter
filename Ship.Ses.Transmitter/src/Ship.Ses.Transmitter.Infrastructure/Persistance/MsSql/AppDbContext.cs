@@ -1,6 +1,7 @@
 ﻿using Ship.Ses.Transmitter.Domain.Customers;
 using Ship.Ses.Transmitter.Domain.Orders;
 using Microsoft.EntityFrameworkCore;
+using Ship.Ses.Transmitter.Domain;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MsSql
 {
@@ -14,6 +15,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MsSql
 
         public DbSet<Order> Orders { get; set; }
         public DbSet<Customer> Customers { get; set; }
+       
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -26,5 +28,6 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MsSql
     {
         public DbSet<Order> Orders { get; set; }
         public DbSet<Customer> Customers { get; set; }
+        
     }
 }

@@ -1,7 +1,7 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
-VisualStudioVersion = 17.13.35818.85 d17.13
+VisualStudioVersion = 17.13.35818.85
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Application", "Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\Ship.Ses.Transmitter.Application.csproj", "{B967C35D-33B4-4CA6-9BAB-BB1504B7160F}"
 EndProject
@@ -18,6 +18,11 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Infrastructure.UnitTests", "Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Infrastructure.UnitTests\Ship.Ses.Transmitter.Infrastructure.UnitTests.csproj", "{3B90B15F-109A-4593-9168-66F9CEF72752}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Worker", "Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Service\Ship.Ses.Transmitter.Worker\Ship.Ses.Transmitter.Worker.csproj", "{AA890186-3E99-4F17-AE49-7938256D8531}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "other_scripts", "other_scripts", "{02EA681E-C7D8-13C7-8484-4AC65E1B71E8}"
+	ProjectSection(SolutionItems) = preProject
+		sample_data_gen.py = sample_data_gen.py
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

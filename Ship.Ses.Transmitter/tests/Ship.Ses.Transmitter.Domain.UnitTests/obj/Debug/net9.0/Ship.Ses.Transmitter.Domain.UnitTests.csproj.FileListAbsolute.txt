@@ -101,4 +101,10 @@ C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.UnitTests.pdb
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\obj\Debug\net9.0\Ship.Ses.Transmitter.Domain.UnitTests.genruntimeconfig.cache
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\obj\Debug\net9.0\ref\Ship.Ses.Transmitter.Domain.UnitTests.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\DnsClient.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\Microsoft.Extensions.Logging.Abstractions.dll
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\MongoDB.Bson.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\MongoDB.Driver.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\SharpCompress.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\Snappier.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\bin\Debug\net9.0\ZstdSharp.dll

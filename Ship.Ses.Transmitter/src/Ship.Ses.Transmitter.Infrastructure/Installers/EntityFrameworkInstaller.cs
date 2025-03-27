@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Installers
 {
@@ -14,8 +15,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
             if (appSettings != null)
             {
-                var msSqlSettings = appSettings.MsSql;
-                builder.Services.AddDbContext<AppDbContext>(options => options.UseNpgsql(msSqlSettings.ConnectionString));
+                var msSqlSettings = appSettings.ShipServerSqlDb;
+                builder.Services.AddDbContext<AppDbContext>(options => options.UseMySQL(msSqlSettings.ConnectionString));
                 builder.Services.AddScoped<IAppDbContext>(provider => provider.GetService<AppDbContext>());
             }
         }
@@ -24,5 +25,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
         {
             appDbContext.Database.Migrate();
         }
+        
     }
+
+
 }

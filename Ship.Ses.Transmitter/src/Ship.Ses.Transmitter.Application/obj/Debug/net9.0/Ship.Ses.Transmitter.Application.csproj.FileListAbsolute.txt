@@ -13,3 +13,4 @@ C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\S
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\refint\Ship.Ses.Transmitter.Application.dll
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.pdb
 C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\ref\Ship.Ses.Transmitter.Application.dll
+C:\LaoluOlapegba\source\repos\SeS\SHIP.SesTransmitter\Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Application\obj\Debug\net9.0\Ship.Ses.Transmitter.Application.sourcelink.json

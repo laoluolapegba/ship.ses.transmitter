@@ -19,6 +19,12 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using MySql.Data.MySqlClient;
+using Ship.Ses.Transmitter.Domain.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Sync;
+using static Org.BouncyCastle.Math.EC.ECCurve;
+using System.Data;
+using Ship.Ses.Transmitter.Worker;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Installers
 {
@@ -46,10 +52,24 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             });
 
             // ✅ Register Repositories & Services
+            services.AddScoped<IFhirSyncRepositoryFactory, FhirSyncRepositoryFactory>();
             services.AddScoped<IFhirSyncRepository, FhirSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 
-            
+            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
+            services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
+            var appSettings = configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
+
+            if (appSettings != null)
+            {
+                var msSqlSettings = appSettings.ShipServerSqlDb;
+            }
+            services.Configure<SyncClientOptions>(configuration.GetSection("SeSClient"));
+
+            // services.AddScoped<IDbConnection>(sp => new MySqlConnection(
+            //    configuration.GetConnectionString("MonitoringDb")));
+
+
         }
         public static void ConfigureLogging(this WebApplicationBuilder builder)
         {
