@@ -12,17 +12,20 @@ using Ship.Ses.Transmitter.Infrastructure.Persistance.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Worker;
 using System.Linq;
+using System.Security.Authentication;
+using System.Security.Cryptography.X509Certificates;
 using static K4os.Compression.LZ4.Engine.Pubternal;
+using Polly;
+using Polly.Extensions.Http;
+
 var builder = Host.CreateApplicationBuilder(args);
-//builder.InstallAppDbContext();
+
 builder.Logging.ClearProviders();
 // ✅ Configure Serilog with ElasticSearch & CorrelationId
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
     .Enrich.WithCorrelationId()
-    //.WriteTo.Console()
-    //.WriteTo.File("logs/log-.txt", rollingInterval: RollingInterval.Day)
     .WriteTo.Elasticsearch(new Serilog.Sinks.Elasticsearch.ElasticsearchSinkOptions(
         new Uri(builder.Configuration["ElasticSearch:Uri"] ?? "http://localhost:9200"))
     {
@@ -30,9 +33,6 @@ Log.Logger = new LoggerConfiguration()
         IndexFormat = "logs-{0:yyyy.MM.dd}"
     })
     .CreateLogger();
-
-//builder.Host.UseSerilog();
-
 builder.Logging.AddSerilog();
 
 // ✅ Load Configuration (Supports appsettings.json & Environment Variables)
@@ -40,18 +40,11 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnC
 builder.Configuration.AddEnvironmentVariables();
 
 // ✅ Register Services & Observability
-builder.Services.AddAppServices(builder.Configuration);
 builder.Services.ConfigureTracing(builder.Configuration);
-builder.Services.Configure<SyncOptions>(builder.Configuration.GetSection("ResourceSync"));
 
-var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
-if (appSettings != null)
-{
-    var msSqlSettings = appSettings.ShipServerSqlDb;
-    builder.Services.AddDbContext<AppDbContext>(options =>
-     options.UseMySQL(msSqlSettings.ConnectionString));
-    builder.Services.AddScoped<IAppDbContext>(provider => provider.GetService<AppDbContext>());
-}
+builder.Services
+    .AddFhirApiClient(builder.Configuration)
+    .AddSyncMetrics(builder.Configuration);
 
 // ✅ Register Background Workers for Each FHIR Resource Type
 
@@ -66,29 +59,12 @@ if (syncOptions.Patient.Enabled)
 builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 
 
-//if (syncOptions.Encounter.Enabled)
-//    builder.Services.AddHostedService<EncounterSyncWorker>();
-//builder.Services.AddHostedService(sp =>
-//    new SyncWorker(sp.GetRequiredService<IServiceProvider>(),
-//                       sp.GetRequiredService<ILogger<SyncWorker>>(),
-//                       FhirResourceType.Encounter));
-
-
 var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
 Console.WriteLine(test == null
     ? "❌ ISyncMetricsCollector not registered"
     : "✅ ISyncMetricsCollector is registered");
 
 var app = builder.Build();
-
-//using (var scope = app.Services.CreateScope())
-//{
-//    var appDbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-//    //EntityFrameworkInstaller.SeedDatabase(appDbContext);
-//}
-;
-// ✅ Ensure logs are flushed before shutdown
-//app.Lifetime.ApplicationStopped.Register(Log.CloseAndFlush);
 
 
 app.Run();

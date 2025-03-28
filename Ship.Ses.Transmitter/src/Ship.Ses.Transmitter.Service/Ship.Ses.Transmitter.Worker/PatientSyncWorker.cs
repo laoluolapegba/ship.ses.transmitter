@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Options;
 using Serilog.Context;
+using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Infrastructure.ReadServices;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
@@ -57,7 +58,9 @@ namespace Ship.Ses.Transmitter.Worker
                         .Create(_settings.CollectionName);
 
                     var logger = scope.ServiceProvider.GetRequiredService<ILogger<FhirSyncService>>();
-                    var service = new FhirSyncService(repo, logger);
+                    //var service = new FhirSyncService(repo, logger);
+                    using var syncScope = _sp.CreateScope();
+                    var service = syncScope.ServiceProvider.GetRequiredService<IFhirSyncService>();
 
                     var correlationId = Guid.NewGuid().ToString();
                     using (LogContext.PushProperty("CorrelationId", correlationId))
