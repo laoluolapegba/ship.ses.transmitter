@@ -1,6 +1,12 @@
 ﻿using Microsoft.Extensions.Logging;
+using MongoDB.Bson;
+using MongoDB.Bson.IO;
 using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Domain.Enums;
 using Ship.Ses.Transmitter.Domain.Patients;
+using Ship.Ses.Transmitter.Domain.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Services;
+using Ship.Ses.Transmitter.Infrastructure.Shared;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13,11 +19,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
     {
         private readonly IFhirSyncRepository _repository;
         private readonly ILogger<FhirSyncService> _logger;
+        private readonly IFhirApiService _fhirApiService;
 
-        public FhirSyncService(IFhirSyncRepository repository, ILogger<FhirSyncService> logger)
+        public FhirSyncService(IFhirSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService)
         {
             _repository = repository;
             _logger = logger;
+            _fhirApiService = fhirApiService;
         }
 
         public async Task ProcessPendingRecordsAsync(FhirResourceType resourceType, CancellationToken cancellationToken)
@@ -34,6 +42,15 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                 {
                     _logger.LogInformation($"Processing {record.ResourceId}... from {resourceType.ToString()}");
                     // Simulate FHIR API Call
+                    //string jsonPayload = record.FhirJson.ToJson(new JsonWriterSettings { OutputMode = JsonOutputMode.CanonicalExtendedJson });
+                    string jsonPayload = record.FhirJson.ToCleanJson();
+                    await _fhirApiService.SendAsync(
+                        FhirOperation.Post,
+                        resourceType: "Patient",
+                        resourceId: record.ResourceId,
+                        jsonPayload: jsonPayload,
+                        cancellationToken: cancellationToken
+                    );
                     await Task.Delay(1000, cancellationToken);
 
                     record.Status = "Synced";
