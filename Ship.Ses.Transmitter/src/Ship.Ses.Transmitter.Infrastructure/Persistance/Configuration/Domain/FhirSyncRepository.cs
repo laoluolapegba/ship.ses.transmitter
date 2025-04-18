@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Options;
+using MongoDB.Bson;
 using MongoDB.Driver;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
@@ -12,42 +13,59 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 {
     public class FhirSyncRepository : IFhirSyncRepository
     {
-        private readonly IMongoCollection<FhirSyncRecord> _collection;
+        private readonly IMongoDatabase _database;
 
         public FhirSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
-   : this(client.GetDatabase(settings.Value.DatabaseName), settings.Value.CollectionName)
         {
+            _database = client.GetDatabase(settings.Value.DatabaseName);
         }
 
-        public FhirSyncRepository(IMongoDatabase database, string collectionName)
+        public async Task<IEnumerable<T>> GetPendingRecordsAsync<T>() where T : FhirSyncRecord, new()
         {
-            _collection = database.GetCollection<FhirSyncRecord>(collectionName);
-        }
-        //public FhirSyncRepository(IMongoCollection<FhirSyncRecord> settings) //IOptions<SourceDbSettings> settings)
-        //{
-        //    var client = new MongoClient(settings.Value.ConnectionString);
-        //    var database = client.GetDatabase(settings.Value.DatabaseName);
-        //    _collection = database.GetCollection<FhirSyncRecord>(settings.Value.CollectionName);
-        //}
+            var collectionName = new T().CollectionName;
+            var collection = _database.GetCollection<T>(collectionName);
 
-        public async Task<IEnumerable<FhirSyncRecord>> GetPendingRecordsAsync(FhirResourceType resourceType)
-        {
-            var filter = Builders<FhirSyncRecord>.Filter.And(
-                Builders<FhirSyncRecord>.Filter.Eq(r => r.ResourceType, resourceType),
-                Builders<FhirSyncRecord>.Filter.Eq(r => r.Status, "Pending")
-            );
-            return await _collection.Find(filter).ToListAsync();
+            var filter = Builders<T>.Filter.Eq(r => r.Status, "Pending");
+            return await collection.Find(filter).ToListAsync();
         }
 
-        public async Task AddRecordAsync(FhirSyncRecord record)
+        public async Task AddRecordAsync<T>(T record) where T : FhirSyncRecord
         {
-            await _collection.InsertOneAsync(record);
+            var collection = _database.GetCollection<T>(record.CollectionName);
+            await collection.InsertOneAsync(record);
         }
 
-        public async Task UpdateRecordAsync(FhirSyncRecord record)
+        public async Task UpdateRecordAsync<T>(T record) where T : FhirSyncRecord
         {
-            var filter = Builders<FhirSyncRecord>.Filter.Eq(r => r.Id, record.Id);
-            await _collection.ReplaceOneAsync(filter, record);
+            var collection = _database.GetCollection<T>(record.CollectionName);
+            var filter = Builders<T>.Filter.Eq(r => r.Id, record.Id);
+            await collection.ReplaceOneAsync(filter, record);
+        }
+        public async Task<IEnumerable<T>> GetByStatusAsync<T>(string status, int skip = 0, int take = 100)
+    where T : FhirSyncRecord, new()
+        {
+            var collection = _database.GetCollection<T>(new T().CollectionName);
+            var filter = Builders<T>.Filter.Eq(r => r.Status, status);
+            return await collection.Find(filter)
+                .Skip(skip)
+                .Limit(take)
+                .ToListAsync();
+        }
+
+        public async Task BulkUpdateStatusAsync<T>(IEnumerable<ObjectId> ids, string status, string error = null)
+            where T : FhirSyncRecord, new()
+        {
+            var collection = _database.GetCollection<T>(new T().CollectionName);
+            var filter = Builders<T>.Filter.In("Id", ids);
+
+            var update = Builders<T>.Update
+                .Set(r => r.Status, status)
+                .Set(r => r.TimeSynced, DateTime.UtcNow);
+
+            if (!string.IsNullOrEmpty(error))
+                update = update.Set(r => r.ErrorMessage, error);
+
+            await collection.UpdateManyAsync(filter, update);
         }
     }
 }

@@ -1,15 +1,7 @@
 ﻿//using Google.Protobuf.WellKnownTypes;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Options;
-using MongoDB.Driver;
 using Serilog;
 using Ship.Ses.Transmitter.Application.Interfaces;
-using Ship.Ses.Transmitter.Domain.Patients;
-using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Installers;
-using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
-using Ship.Ses.Transmitter.Infrastructure.Persistance.Sync;
-using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Worker;
 using System.Linq;
 using System.Security.Authentication;
@@ -17,8 +9,13 @@ using System.Security.Cryptography.X509Certificates;
 using static K4os.Compression.LZ4.Engine.Pubternal;
 using Polly;
 using Polly.Extensions.Http;
+using Ship.Ses.Transmitter.Application.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
+using Microsoft.EntityFrameworkCore;
 
 var builder = Host.CreateApplicationBuilder(args);
+AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
 builder.Logging.ClearProviders();
 // ✅ Configure Serilog with ElasticSearch & CorrelationId
@@ -42,21 +39,37 @@ builder.Configuration.AddEnvironmentVariables();
 // ✅ Register Services & Observability
 builder.Services.ConfigureTracing(builder.Configuration);
 
+
+var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
+if (appSettings != null)
+{
+
+    var msSqlSettings = appSettings.ShipServerSqlDb;
+    builder.Services.AddDbContext<ShipServerDbContext>(options =>
+    {
+        options.UseMySQL(msSqlSettings.ConnectionString);
+    });
+}
+else
+{
+    throw new Exception("AppSettings not found");
+}
+builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
+
+
+
+builder.Services.AddAppServices(builder.Configuration);
+
 builder.Services
     .AddFhirApiClient(builder.Configuration)
     .AddSyncMetrics(builder.Configuration);
 
 // ✅ Register Background Workers for Each FHIR Resource Type
 
-var syncOptions = builder.Configuration.GetSection("ResourceSync").Get<SyncOptions>();
 
-if (syncOptions.Patient.Enabled)
-    builder.Services.AddHostedService<PatientSyncWorker>();
-
-if (syncOptions.Patient.Enabled)
-    builder.Services.AddHostedService<EncounterSyncWorker>();
-
-builder.Services.AddHostedService<MetricsSyncReporterWorker>();
+builder.Services.AddHostedService<PatientSyncWorker>();
+builder.Services.AddHostedService<EncounterSyncWorker>();
+//builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 
 
 var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();

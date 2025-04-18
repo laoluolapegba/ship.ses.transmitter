@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
 
-namespace Ship.Ses.Transmitter.Domain
+namespace Ship.Ses.Transmitter.Domain.Sync
 {
     [Table("ses_sync_client_status")]
     public class SyncClientStatus
@@ -41,7 +41,7 @@ namespace Ship.Ses.Transmitter.Domain
         public string Version { get; set; }
 
         [Column("signature_hash")]
-        public string SignatureHash { get; set; }
+        public string? SignatureHash { get; set; }
 
         [Column("updated_at")]
         public DateTime UpdatedAt { get; set; }

@@ -3,6 +3,8 @@ using System.Data;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Ship.Ses.Transmitter.Application.Sync;
+
 
 
 //using Dapper;
@@ -14,10 +16,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Sync
 {
     public class MySqlSyncMetricsWriter : ISyncMetricsWriter
     {
-        private readonly AppDbContext _dbContext;
+        private readonly ShipServerDbContext _dbContext;
         private readonly ILogger<MySqlSyncMetricsWriter> _logger;
 
-        public MySqlSyncMetricsWriter(AppDbContext dbContext,
+        public MySqlSyncMetricsWriter(ShipServerDbContext dbContext,
             ILogger<MySqlSyncMetricsWriter> logger)
         {
             _dbContext = dbContext;
@@ -58,6 +60,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Sync
 
             _logger.LogInformation("✅ Metric written for {ClientId}/{ResourceType} (ID: {Id})", metric.ClientId, metric.ResourceType, metric.Id);
         }
-
+        public async Task WriteMetricsAsync(IEnumerable<SyncClientMetric> metrics)
+        {
+            _dbContext.SyncClientMetrics.AddRange(metrics);
+            await _dbContext.SaveChangesAsync();
+        }
     }
 }

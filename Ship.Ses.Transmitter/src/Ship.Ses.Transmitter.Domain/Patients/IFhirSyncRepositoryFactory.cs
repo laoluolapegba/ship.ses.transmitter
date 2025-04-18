@@ -8,6 +8,6 @@ namespace Ship.Ses.Transmitter.Domain.Patients
 {
     public interface IFhirSyncRepositoryFactory
     {
-        IFhirSyncRepository Create(string collectionName);
+        //IFhirSyncRepository Create(string collectionName);
     }
 }

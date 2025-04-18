@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Domain.Patients
 {
-    public class FhirSyncRecord
+    public abstract class FhirSyncRecord
     {
         [BsonId]
         [BsonRepresentation(BsonType.ObjectId)]
@@ -16,7 +16,8 @@ namespace Ship.Ses.Transmitter.Domain.Patients
 
         [BsonElement("resourceType")]
         [BsonRepresentation(BsonType.String)] // Explicitly store enum as a string
-        public FhirResourceType ResourceType { get; set; }
+        //public FhirResourceType ResourceType { get; set; }
+        public string ResourceType { get; set; }
 
         [BsonElement("resourceId")]
         public string ResourceId { get; set; }
@@ -43,5 +44,8 @@ namespace Ship.Ses.Transmitter.Domain.Patients
 
         [BsonElement("syncedFhirResourceId")]
         public string SyncedResourceId { get; set; } // Updated after sync
+        // Derived classes must override collection name
+        public abstract string CollectionName { get; }
+
     }
 }

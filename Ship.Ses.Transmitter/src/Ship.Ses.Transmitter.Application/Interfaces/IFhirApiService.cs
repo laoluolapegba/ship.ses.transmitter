@@ -5,7 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
-namespace Ship.Ses.Transmitter.Domain.Sync
+namespace Ship.Ses.Transmitter.Application.Sync
 {
     public interface IFhirApiService
     {

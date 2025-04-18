@@ -31,6 +31,8 @@ using Ship.Ses.Transmitter.Infrastructure.Services;
 using System.Security.Cryptography.X509Certificates;
 using Microsoft.EntityFrameworkCore;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.Sync;
+using Ship.Ses.Transmitter.Application.Sync;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Installers
 {
@@ -58,19 +60,25 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             });
 
             // ✅ Register Repositories & Services
-            services.AddScoped<IFhirSyncRepositoryFactory, FhirSyncRepositoryFactory>();
             services.AddScoped<IFhirSyncRepository, FhirSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 
-            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
-            services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
+            //services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
+           // services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
             var appSettings = configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
 
             if (appSettings != null)
             {
                 var msSqlSettings = appSettings.ShipServerSqlDb;
             }
-            services.Configure<SyncClientOptions>(configuration.GetSection("SeSClient"));
+            services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
+
+            var sesSetting = configuration.GetSection("SeSClient");
+            Console.WriteLine($"  ClientId: {sesSetting["ClientId"]}");
+
+            services.AddScoped<IClientSyncConfigProvider, EfClientSyncConfigProvider>();
+           
+
 
             static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() =>
     HttpPolicyExtensions
@@ -122,58 +130,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
 
             services.AddSingleton(Propagator);
         }
-
-        public static IServiceCollection AddSyncMetrics(this IServiceCollection services, IConfiguration config)
-        {
-
-            // ✅ Bind DatabaseSettings from appsettings.json
-            services.Configure<SourceDbSettings>(config.GetSection("SourceDbSettings"));
-
-            // ✅ Register MongoDB Client
-            services.AddSingleton<IMongoClient>(sp =>
-            {
-                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
-                return new MongoClient(settings.ConnectionString);
-            });
-
-            // ✅ Register MongoDB Database
-            services.AddScoped(sp =>
-            {
-                var client = sp.GetRequiredService<IMongoClient>();
-                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
-                return client.GetDatabase(settings.DatabaseName);
-            });
-
-            // ✅ Register Repositories & Services
-            services.AddScoped<IFhirSyncRepositoryFactory, FhirSyncRepositoryFactory>();
-            services.AddScoped<IFhirSyncRepository, FhirSyncRepository>();
-            services.AddScoped<IFhirSyncService, FhirSyncService>();
-
-            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
-            services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
-            var appSettings = config.GetSection(nameof(AppSettings)).Get<AppSettings>();
-
-            if (appSettings != null)
-            {
-                var msSqlSettings = appSettings.ShipServerSqlDb;
-            }
-            services.Configure<SyncClientOptions>(config.GetSection("SeSClient"));
-            services.Configure<SyncOptions>(config.GetSection("ResourceSync"));
-
-            
-            if (appSettings != null)
-            {
-                var msSqlSettings = appSettings.ShipServerSqlDb;
-                services.AddDbContext<AppDbContext>(options =>
-                 options.UseMySQL(msSqlSettings.ConnectionString));
-                services.AddScoped<IAppDbContext>(provider => provider.GetService<AppDbContext>());
-            }
-
-            return services;
-        }
         public static IServiceCollection AddFhirApiClient(this IServiceCollection services, IConfiguration config)
         {
             services.Configure<FhirApiSettings>(config.GetSection("FhirApi"));
+            //Console.WriteLine("FhirApiSettings: " + config.GetSection("FhirApi").Value);
+            var fhirApiSection = config.GetSection("FhirApi");
+            Console.WriteLine($"  BaseUrl: {fhirApiSection["BaseUrl"]}");
+            Console.WriteLine($"  ClientCertPath: {fhirApiSection["ClientCertPath"]}");
+            Console.WriteLine($"  ClientCertPassword: {fhirApiSection["ClientCertPassword"]}");
 
             services.AddHttpClient("FhirApi", (sp, client) =>
             {
@@ -203,6 +167,35 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             return services;
         }
 
+        public static IServiceCollection AddSyncMetrics(this IServiceCollection services, IConfiguration config)
+        {
+            /*
+            // ✅ Bind DatabaseSettings from appsettings.json
+            services.Configure<SourceDbSettings>(config.GetSection("SourceDbSettings"));
+
+            // ✅ Register MongoDB Client
+            services.AddSingleton<IMongoClient>(sp =>
+            {
+                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
+                return new MongoClient(settings.ConnectionString);
+            });
+
+            // ✅ Register MongoDB Database
+            services.AddScoped(sp =>
+            {
+                var client = sp.GetRequiredService<IMongoClient>();
+                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
+                return client.GetDatabase(settings.DatabaseName);
+            });
+            */
+
+            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
+            services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
+            
+
+            return services;
+        }
+        
         private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
         {
             return HttpPolicyExtensions

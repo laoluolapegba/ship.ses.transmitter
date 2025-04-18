@@ -10,6 +10,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Serilog.Context;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
+using Ship.Ses.Transmitter.Application.Sync;
 
 namespace Ship.Ses.Transmitter.Worker
 {
@@ -26,7 +28,7 @@ namespace Ship.Ses.Transmitter.Worker
             //ISyncMetricsCollector collector,
             //ISyncMetricsWriter writer,
              IServiceProvider serviceProvider,
-            IOptions<SyncClientOptions> options)
+            IOptions<SeSClientOptions> options)
         {
             _logger = logger;
             //_collector = collector;
@@ -55,15 +57,16 @@ namespace Ship.Ses.Transmitter.Worker
 
                     try
                     {
-                        var status = collector.CollectStatus(_clientId);
-                        var metrics = collector.CollectMetrics(_clientId);
+                        var status = await collector.CollectStatusAsync(_clientId);
+                        var metrics = await collector.CollectMetricsAsync(_clientId);
                         //var statts = new SyncClientStatus { ClientId = _clientId };
                         _logger.LogInformation("Writing current sync status: {status}", JsonSerializer.Serialize(status));
                         await writer.WriteStatusAsync(status);
-                        foreach (var metric in metrics)
-                        {
-                            await writer.WriteMetricAsync(metric);
-                        }
+                        await writer.WriteMetricsAsync(metrics); // ✅ bulk write
+                        //foreach (var metric in metrics)
+                        //{
+                        //    await writer.WriteMetricAsync(metric);
+                        //}
 
                         _logger.LogInformation("✅ Sync metrics written for {ClientId}", _clientId);
                     }

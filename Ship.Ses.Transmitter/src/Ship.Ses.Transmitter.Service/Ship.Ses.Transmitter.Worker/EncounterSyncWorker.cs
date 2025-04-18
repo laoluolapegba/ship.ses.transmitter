@@ -4,6 +4,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog.Context;
 using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Domain.Encounter;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Infrastructure.ReadServices;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
@@ -17,23 +18,22 @@ namespace Ship.Ses.Transmitter.Worker
     {
         private readonly IServiceProvider _sp;
         private readonly ILogger<EncounterSyncWorker> _logger;
-        private readonly ResourceSyncSettings _settings;
+        //private readonly IClientSyncConfigProvider _configProvider;
+        private readonly string _clientId;
 
-        public EncounterSyncWorker(IServiceProvider sp, IOptions<SyncOptions> options, ILogger<EncounterSyncWorker> logger)
+        public EncounterSyncWorker(
+            IServiceProvider sp,
+            IOptions<SeSClientOptions> clientOptions,
+            ILogger<EncounterSyncWorker> logger)
         {
             _sp = sp;
             _logger = logger;
-            _settings = options.Value.Encounter;
+           // _configProvider = configProvider;
+            _clientId = clientOptions.Value.ClientId;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            if (!_settings.Enabled)
-            {
-                _logger.LogInformation("⏸️ Encounter sync disabled in config.");
-                return;
-            }
-
             _logger.LogInformation("🚀 Starting Encounter Sync Worker...");
 
             while (!stoppingToken.IsCancellationRequested)
@@ -41,27 +41,38 @@ namespace Ship.Ses.Transmitter.Worker
                 try
                 {
                     using var scope = _sp.CreateScope();
-                    var repo = scope.ServiceProvider
-                                    .GetRequiredService<IFhirSyncRepositoryFactory>()
-                                    .Create(_settings.CollectionName);
+                    var configProvider = scope.ServiceProvider.GetRequiredService<IClientSyncConfigProvider>();
 
-                    var logger = scope.ServiceProvider.GetRequiredService<ILogger<FhirSyncService>>();
+                    if (!await configProvider.IsClientActiveAsync(_clientId))
+                    {
+                        _logger.LogWarning("⛔ Sync client {ClientId} is not active. Skipping...", _clientId);
+                        return;
+                    }
 
-                    using var syncScope = _sp.CreateScope();
-                    var service = syncScope.ServiceProvider.GetRequiredService<IFhirSyncService>();
 
-                    //var service = new FhirSyncService(repo, logger);
+                    var enabledResources = await configProvider.GetEnabledResourcesAsync(_clientId);
+
+                    if (!enabledResources.Contains("Encounter", StringComparer.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("⏸️ Encounter sync disabled for client {ClientId}.", _clientId);
+                        return;
+                    }
+
+                    var syncService = scope.ServiceProvider.GetRequiredService<IFhirSyncService>();
 
                     var correlationId = Guid.NewGuid().ToString();
-                    using (LogContext.PushProperty("CorrelationId", correlationId))
+                    using (Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId))
                     {
-                        await service.ProcessPendingRecordsAsync(FhirResourceType.Encounter, stoppingToken);
+                        var result = await syncService.ProcessPendingRecordsAsync<PatientSyncRecord>(stoppingToken);
+
+                        _logger.LogInformation("✅ Synced Encounter records: Total={Total}, Synced={Synced}, Failed={Failed}",
+                            result.Total, result.Synced, result.Failed);
                     }
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Unhandled exception in EncounterSyncWorker");
-                    await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken); // backoff
+                    _logger.LogError(ex, "❌ Unhandled exception in EncounterSyncWorker");
+                    await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
                 }
 
                 await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);

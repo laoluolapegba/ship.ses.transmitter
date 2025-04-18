@@ -14,14 +14,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
     {
         private readonly IMongoDatabase _database;
 
-        public FhirSyncRepositoryFactory(IMongoClient mongoClient, IOptions<SourceDbSettings> options)
-        {
-            _database = mongoClient.GetDatabase(options.Value.DatabaseName);
-        }
+        //public FhirSyncRepositoryFactory(IMongoClient mongoClient, IOptions<SourceDbSettings> options)
+        //{
+        //    _database = mongoClient.GetDatabase(options.Value.DatabaseName);
+        //}
 
-        public IFhirSyncRepository Create(string collectionName)
-        {
-            return new FhirSyncRepository(_database, collectionName);
-        }
+        //public IFhirSyncRepository Create(string collectionName)
+        //{
+        //    return new FhirSyncRepository(_database, collectionName);
+        //}
     }
 }

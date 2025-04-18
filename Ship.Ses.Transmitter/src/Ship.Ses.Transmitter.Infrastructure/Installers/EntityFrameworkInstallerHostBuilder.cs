@@ -13,7 +13,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
     {
 
 
-        public static void SeedDatabase(AppDbContext appDbContext)
+        public static void SeedDatabase(ShipServerDbContext appDbContext)
         {
             appDbContext.Database.Migrate();
         }
@@ -27,10 +27,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
                 {
                     var msSqlSettings = appSettings.ShipServerSqlDb;
 
-                    services.AddDbContext<AppDbContext>(options =>
+                    services.AddDbContext<ShipServerDbContext>(options =>
                      options.UseMySQL(msSqlSettings.ConnectionString));
 
-                     services.AddScoped<IAppDbContext>(provider => provider.GetService<AppDbContext>());
+                     services.AddScoped<IShipServerDbContext>(provider => provider.GetService<ShipServerDbContext>());
                 }
             });
 

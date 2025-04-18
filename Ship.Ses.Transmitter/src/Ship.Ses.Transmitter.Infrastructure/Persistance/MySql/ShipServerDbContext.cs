@@ -1,17 +1,18 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using Ship.Ses.Transmitter.Domain;
+using Ship.Ses.Transmitter.Domain.Sync;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MySql
 {
-    public class AppDbContext : DbContext, IAppDbContext
+    public class ShipServerDbContext : DbContext, IShipServerDbContext
     {
 
-        public AppDbContext(DbContextOptions<AppDbContext> options)
+        public ShipServerDbContext(DbContextOptions<ShipServerDbContext> options)
             : base(options)
         {
         }
         public DbSet<SyncClientStatus> SyncClientStatuses { get; set; }
-        //public DbSet<SyncClient> SyncClients { get; set; }
+        public DbSet<SyncClient> SyncClients { get; set; }
         public DbSet<SyncClientMetric> SyncClientMetrics { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -19,14 +20,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MySql
             modelBuilder.Entity<SyncClientStatus>().HasKey(x => x.ClientId);
             modelBuilder.Entity<SyncClientMetric>().HasKey(x => x.Id);
 
-            modelBuilder.ApplyConfigurationsFromAssembly(typeof(AppDbContext).Assembly);
+            modelBuilder.ApplyConfigurationsFromAssembly(typeof(ShipServerDbContext).Assembly);
             base.OnModelCreating(modelBuilder);
         }
     }
 
-    public interface IAppDbContext
+    public interface IShipServerDbContext
     {
-        //public DbSet<SyncClient>  SyncClients { get; set; }
+        public DbSet<SyncClient>  SyncClients { get; set; }
         public DbSet<SyncClientMetric> SyncClientMetrics { get; set; }
         public DbSet<SyncClientStatus> SyncClientStatuses { get; set; }
     }

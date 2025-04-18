@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations.Schema;
 using System.ComponentModel.DataAnnotations;
 
-namespace Ship.Ses.Transmitter.Domain
+namespace Ship.Ses.Transmitter.Domain.Sync
 {
     [Table("ses_sync_client_metrics")]
     public class SyncClientMetric

@@ -1,6 +1,11 @@
-﻿using Microsoft.Extensions.Options;
+﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using MongoDB.Bson;
 using MongoDB.Driver;
-using Ship.Ses.Transmitter.Domain;
+using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Application.Sync;
+using Ship.Ses.Transmitter.Domain.Encounter;
+using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using System;
@@ -13,38 +18,30 @@ namespace Ship.Ses.Transmitter.Worker
     public class ClientSyncMetricsCollector : ISyncMetricsCollector
     {
         private readonly IMongoDatabase _mongoDatabase;
-        private readonly Dictionary<string, ResourceSyncSettings> _resourceConfig;
+        private readonly IClientSyncConfigProvider _configProvider;
+        private readonly ILogger<ClientSyncMetricsCollector> _logger;
+        private readonly Dictionary<string, Type> _resourceMap;
 
-        public ClientSyncMetricsCollector(IMongoDatabase mongoDatabase, 
-            IOptions<SyncOptions> options)
+        public ClientSyncMetricsCollector(
+            IMongoDatabase mongoDatabase,
+            IClientSyncConfigProvider configProvider,
+            ILogger<ClientSyncMetricsCollector> logger)
         {
-            if (mongoDatabase == null)
-                throw new ArgumentNullException(nameof(mongoDatabase), "❌ IMongoDatabase is null. Check DI setup.");
-
-            if (options == null || options.Value == null)
-                throw new ArgumentNullException(nameof(options), "❌ SyncOptions is null or missing in configuration.");
-
-
             _mongoDatabase = mongoDatabase;
-            _resourceConfig = new Dictionary<string, ResourceSyncSettings>
+            _configProvider = configProvider;
+            _logger = logger;
+
+            _resourceMap = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase)
             {
-                { "Patient", options.Value.Patient },
-                { "Encounter", options.Value.Encounter }
-                // Add more resources here as needed in config and class
+                { "Patient", typeof(PatientSyncRecord) },
+                { "Encounter", typeof(EncounterSyncRecord) }
+                // Add new resource mappings here
             };
-            if (_resourceConfig.Values.All(v => v == null))
-            {
-                throw new InvalidOperationException("❌ No resource config was loaded. Check appsettings.json ResourceSync section.");
-            }
-            foreach (var kv in _resourceConfig)
-            {
-                Console.WriteLine($"Resource: {kv.Key}, Collection: {kv.Value?.CollectionName}, Enabled: {kv.Value?.Enabled}");
-            }
         }
 
-        public SyncClientStatus CollectStatus(string clientId)
+        public async Task<SyncClientStatus> CollectStatusAsync(string clientId)
         {
-            var (synced, failed) = GetAggregateCounts();
+            var (synced, failed) = await GetAggregateCountsAsync(clientId);
 
             return new SyncClientStatus
             {
@@ -64,93 +61,89 @@ namespace Ship.Ses.Transmitter.Worker
             };
         }
 
-        public IEnumerable<SyncClientMetric> CollectMetrics(string clientId)
+        public async Task<IEnumerable<SyncClientMetric>> CollectMetricsAsync(string clientId)
         {
             var now = DateTime.UtcNow;
             var start = now.AddMinutes(-5);
+            var enabledResources = await _configProvider.GetEnabledResourcesAsync(clientId);
+            var result = new List<SyncClientMetric>();
 
-            return _resourceConfig
-                .Where(kv => kv.Value.Enabled)
-                .Select(kv =>
+            foreach (var resource in enabledResources)
+            {
+                if (!_resourceMap.TryGetValue(resource, out var modelType)) continue;
+
+                var instance = (FhirSyncRecord)Activator.CreateInstance(modelType);
+                var collection = _mongoDatabase.GetCollection<BsonDocument>(instance.CollectionName);
+
+                var syncedFilter = Builders<BsonDocument>.Filter.And(
+                    Builders<BsonDocument>.Filter.Gte("CreatedDate", start),
+                    Builders<BsonDocument>.Filter.Lte("CreatedDate", now),
+                    Builders<BsonDocument>.Filter.Eq("Status", "Synced"));
+
+                var failedFilter = Builders<BsonDocument>.Filter.And(
+                    Builders<BsonDocument>.Filter.Gte("CreatedDate", start),
+                    Builders<BsonDocument>.Filter.Lte("CreatedDate", now),
+                    Builders<BsonDocument>.Filter.Eq("Status", "Failed"));
+
+                var syncedCount = (int)await collection.CountDocumentsAsync(syncedFilter);
+                var failedCount = (int)await collection.CountDocumentsAsync(failedFilter);
+
+                result.Add(new SyncClientMetric
                 {
-                    var resource = kv.Key;
-                    var collectionName = kv.Value.CollectionName;
-                    var collection = _mongoDatabase.GetCollection<MongoDocumentWrapper>(collectionName);
+                    Id = Guid.NewGuid().ToString(),
+                    ClientId = clientId,
+                    ResourceType = resource,
+                    SyncWindowStart = start,
+                    SyncWindowEnd = now,
+                    SyncedCount = syncedCount,
+                    FailedCount = failedCount,
+                    BatchId = Guid.NewGuid().ToString(),
+                    Notes = "Collected from MongoDB",
+                    CreatedAt = now,
+                    CreatedBy = clientId,
+                    UpdatedAt = now,
+                    UpdatedBy = clientId
+                });
+            }
 
-                    var syncedFilter = Builders<MongoDocumentWrapper>.Filter.And(
-                        Builders<MongoDocumentWrapper>.Filter.Gte(x => x.CreatedDate, start),
-                        Builders<MongoDocumentWrapper>.Filter.Lte(x => x.CreatedDate, now),
-                        Builders<MongoDocumentWrapper>.Filter.Eq(x => x.Status, "Synced")
-                    );
-
-                    var failedFilter = Builders<MongoDocumentWrapper>.Filter.And(
-                        Builders<MongoDocumentWrapper>.Filter.Gte(x => x.CreatedDate, start),
-                        Builders<MongoDocumentWrapper>.Filter.Lte(x => x.CreatedDate, now),
-                        Builders<MongoDocumentWrapper>.Filter.Eq(x => x.Status, "Failed")
-                    );
-
-                    var syncedCount = (int)collection.CountDocuments(syncedFilter);
-                    var failedCount = (int)collection.CountDocuments(failedFilter);
-
-                    return new SyncClientMetric
-                    {
-                        Id = Guid.NewGuid().ToString(),
-                        ClientId = clientId,
-                        ResourceType = resource,
-                        SyncWindowStart = start,
-                        SyncWindowEnd = now,
-                        SyncedCount = syncedCount,
-                        FailedCount = failedCount,
-                        BatchId = Guid.NewGuid().ToString(),
-                        Notes = "Collected from MongoDB",
-                        CreatedAt = now,
-                        CreatedBy = clientId,
-                        UpdatedAt = now,
-                        UpdatedBy = clientId
-                    };
-                }).ToList();
+            return result;
         }
 
-        private (int synced, int failed) GetAggregateCounts()
+        private async Task<(int synced, int failed)> GetAggregateCountsAsync(string clientId)
         {
             int synced = 0, failed = 0;
+            var enabledResources = await _configProvider.GetEnabledResourcesAsync(clientId);
 
-            foreach (var kv in _resourceConfig.Where(kv => kv.Value.Enabled))
+            foreach (var resource in enabledResources)
             {
-                var collection = _mongoDatabase.GetCollection<MongoDocumentWrapper>(kv.Value.CollectionName);
+                if (!_resourceMap.TryGetValue(resource, out var modelType)) continue;
 
-                var syncedFilter = Builders<MongoDocumentWrapper>.Filter.Eq(x => x.Status, "Synced");
-                var failedFilter = Builders<MongoDocumentWrapper>.Filter.Eq(x => x.Status, "Failed");
+                var instance = (FhirSyncRecord)Activator.CreateInstance(modelType);
+                var collection = _mongoDatabase.GetCollection<BsonDocument>(instance.CollectionName);
 
-                synced += (int)collection.CountDocuments(syncedFilter);
-                failed += (int)collection.CountDocuments(failedFilter);
+                var syncedFilter = Builders<BsonDocument>.Filter.Eq("Status", "Synced");
+                var failedFilter = Builders<BsonDocument>.Filter.Eq("Status", "Failed");
+
+                synced += (int)await collection.CountDocumentsAsync(syncedFilter);
+                failed += (int)await collection.CountDocumentsAsync(failedFilter);
             }
 
             return (synced, failed);
         }
+
         private string GetLocalIpAddress()
         {
-            string ip = "Unknown";
             try
             {
                 var host = Dns.GetHostEntry(Dns.GetHostName());
-                foreach (var ipAddress in host.AddressList)
+                foreach (var ip in host.AddressList)
                 {
-                    if (ipAddress.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                    {
-                        ip = ipAddress.ToString();
-                        break;
-                    }
+                    if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                        return ip.ToString();
                 }
             }
             catch { }
-            return ip;
-        }
-
-        private class MongoDocumentWrapper
-        {
-            public DateTime CreatedDate { get; set; }
-            public string Status { get; set; }
+            return "Unknown";
         }
     }
 

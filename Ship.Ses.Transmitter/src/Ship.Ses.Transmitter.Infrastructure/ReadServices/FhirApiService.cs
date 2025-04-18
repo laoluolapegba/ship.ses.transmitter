@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Application.Sync;
 using Ship.Ses.Transmitter.Domain.Enums;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Domain.SyncModels;
