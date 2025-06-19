@@ -2,9 +2,6 @@
 {
     public record AppSettings
     {
-        public required Redis Redis { get; init; }
-        public required Telemetry Telemetry { get; init; }
-        public required RabbitMq RabbitMq { get; init; }
         public required ShipServerSqlDb ShipServerSqlDb { get; init; }
         public required MsSql MsSql { get; init; }
         public required Cache Cache { get; init; }

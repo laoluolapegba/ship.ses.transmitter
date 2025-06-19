@@ -71,6 +71,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             {
                 var msSqlSettings = appSettings.ShipServerSqlDb;
             }
+            services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
+            services.AddHttpClient<TokenService>();
+            services.AddSingleton<TokenService>();
+
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 
             var sesSetting = configuration.GetSection("SeSClient");
@@ -135,9 +139,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             services.Configure<FhirApiSettings>(config.GetSection("FhirApi"));
             //Console.WriteLine("FhirApiSettings: " + config.GetSection("FhirApi").Value);
             var fhirApiSection = config.GetSection("FhirApi");
-            Console.WriteLine($"  BaseUrl: {fhirApiSection["BaseUrl"]}");
-            Console.WriteLine($"  ClientCertPath: {fhirApiSection["ClientCertPath"]}");
-            Console.WriteLine($"  ClientCertPassword: {fhirApiSection["ClientCertPassword"]}");
+            //Console.WriteLine($"  BaseUrl: {fhirApiSection["BaseUrl"]}");
+            //Console.WriteLine($"  ClientCertPath: {fhirApiSection["ClientCertPath"]}");
+            //Console.WriteLine($"  ClientCertPassword: {fhirApiSection["ClientCertPassword"]}");
 
             services.AddHttpClient("FhirApi", (sp, client) =>
             {
@@ -145,20 +149,21 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
                 client.BaseAddress = new Uri(settings.BaseUrl);
                 client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
             })
-            .ConfigurePrimaryHttpMessageHandler(sp =>
-            {
-                var settings = sp.GetRequiredService<IOptions<FhirApiSettings>>().Value;
-                var certPath = Path.Combine(AppContext.BaseDirectory, settings.ClientCertPath);
-                var cert = new X509Certificate2(certPath, settings.ClientCertPassword);
+            //temporarily disable client certificate handling
+            //.ConfigurePrimaryHttpMessageHandler(sp =>
+            //{
+            //    var settings = sp.GetRequiredService<IOptions<FhirApiSettings>>().Value;
+            //    var certPath = Path.Combine(AppContext.BaseDirectory, settings.ClientCertPath);
+            //    var cert = new X509Certificate2(certPath, settings.ClientCertPassword);
 
-                var handler = new HttpClientHandler
-                {
-                    ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-                };
+            //    var handler = new HttpClientHandler
+            //    {
+            //        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            //    };
 
-                handler.ClientCertificates.Add(cert);
-                return handler;
-            })
+            //    handler.ClientCertificates.Add(cert);
+            //    return handler;
+            //})
             .AddPolicyHandler(GetRetryPolicy())
             .AddPolicyHandler(GetCircuitBreakerPolicy());
 

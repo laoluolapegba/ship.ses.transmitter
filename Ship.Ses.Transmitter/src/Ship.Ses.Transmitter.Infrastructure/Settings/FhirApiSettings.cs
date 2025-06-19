@@ -12,5 +12,6 @@ namespace Ship.Ses.Transmitter.Infrastructure.Settings
         public string ClientCertPath { get; set; }
         public string ClientCertPassword { get; set; }
         public int TimeoutSeconds { get; set; } = 30;
+        
     }
 }

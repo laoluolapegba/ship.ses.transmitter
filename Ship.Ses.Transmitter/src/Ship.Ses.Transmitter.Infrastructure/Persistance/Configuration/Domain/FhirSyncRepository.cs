@@ -52,20 +52,29 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                 .ToListAsync();
         }
 
-        public async Task BulkUpdateStatusAsync<T>(IEnumerable<ObjectId> ids, string status, string error = null)
-            where T : FhirSyncRecord, new()
+        public async Task BulkUpdateStatusAsync<T>(
+    Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)> updates
+) where T : FhirSyncRecord, new()
         {
             var collection = _database.GetCollection<T>(new T().CollectionName);
-            var filter = Builders<T>.Filter.In("Id", ids);
 
-            var update = Builders<T>.Update
-                .Set(r => r.Status, status)
-                .Set(r => r.TimeSynced, DateTime.UtcNow);
+            var models = updates.Select(kv =>
+            {
+                var filter = Builders<T>.Filter.Eq(r => r.Id, kv.Key.ToString());
+                var update = Builders<T>.Update
+                    .Set(r => r.Status, kv.Value.status)
+                    .Set(r => r.ErrorMessage, kv.Value.message)
+                    .Set(r => r.TimeSynced, DateTime.UtcNow)
+                    .Set(r => r.TransactionId, kv.Value.transactionId)
+                    .Set(r => r.ApiResponsePayload, kv.Value.rawResponse)
+                    .Set(r => r.LastAttemptAt, DateTime.UtcNow);
 
-            if (!string.IsNullOrEmpty(error))
-                update = update.Set(r => r.ErrorMessage, error);
+                return new UpdateOneModel<T>(filter, update);
+            });
 
-            await collection.UpdateManyAsync(filter, update);
+            await collection.BulkWriteAsync(models);
         }
+
+        
     }
 }

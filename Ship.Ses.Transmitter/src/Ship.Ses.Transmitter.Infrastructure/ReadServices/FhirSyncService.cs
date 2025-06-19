@@ -43,6 +43,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             var successIds = new List<string>();
             var failedIds = new List<string>();
 
+            var successUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
+            var failedUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
 
             foreach (var record in records)
             {
@@ -50,53 +52,81 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                 {
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
-                    //var result = await _fhirApiService.SendAsync(
-                    //    FhirOperation.Post,
-                    //    record.ResourceType,
-                    //    record.ResourceId,
-                    //    record.FhirJson.ToCleanJson(),
-                    //    token);
+                    var apiResponse = await _fhirApiService.SendAsync(
+                    FhirOperation.Post,
+                    record.ResourceType,
+                    record.ResourceId,
+                    record.FhirJson.ToCleanJson(),
+                    callbackUrl: "https://myfacility.health.ng/ship/fhir/ack",
+                    token);
 
-                    var response = await _fhirApiService.SendAsync(
-                        FhirOperation.Post,
-                        record.ResourceType,
-                        record.ResourceId,
-                        record.FhirJson.ToCleanJson(),
-                        token);
-                    record.Status = "Synced";
-                    record.TimeSynced = DateTime.UtcNow;
-                    record.ErrorMessage = null;
+                    // ✅ Interpret the FHIR API response
+                    if (apiResponse != null && apiResponse.Status?.ToLower() == "success" && apiResponse.Code == 202)
+                    {
+                        successUpdates.Add(ObjectId.Parse(record.Id), (
+                            status: "Synced",
+                            message: apiResponse?.Message ?? "Request accepted",
+                            transactionId: apiResponse?.transactionId ?? string.Empty,
+                            rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
+                        ));
+                        _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
+                    }
+                    else
+                    {
+                        failedUpdates.Add(ObjectId.Parse(record.Id), (
+                            status: "Failed",
+                            message: apiResponse?.Message ?? "Unsuccessful response",
+                            transactionId: apiResponse?.transactionId,
+                            rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
+                        ));
+                        _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.ResourceId, apiResponse?.Message);
+                    }
 
-                    successIds.Add(record.Id);
-                    _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
+                    //record.Status = "Synced";
+                    //record.TimeSynced = DateTime.UtcNow;
+                    //record.ErrorMessage = null;
+                    //record.SyncedResourceId = apiResponse?.transactionId;
+                    //record.ErrorMessage = null;
+                    //successIds.Add(record.Id);
                 }
                 catch (Exception ex)
                 {
-                    record.ErrorMessage = ex.Message;
-                    failedIds.Add(record.Id);
+                    failedUpdates.Add(ObjectId.Parse(record.Id), (
+                        status: "Failed",
+                        message: ex.Message,
+                        transactionId: null,
+                        rawResponse: System.Text.Json.JsonSerializer.Serialize(new { Error = ex.Message, StackTrace = ex.StackTrace })
+
+                    ));
+
                     _logger.LogError(ex, "❌ Sync failed for {Id}: {Message}", record.ResourceId, ex.Message);
                 }
             }
-            if (successIds.Any())
-            {
-                var objectIds = successIds.Select(id => ObjectId.Parse(id)).ToList();
-                await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
-            }
-                
-            //await _repository.BulkUpdateStatusAsync<T>(successIds, "Synced");
 
-            if (failedIds.Any())
-            {
-                var objectIds = failedIds.Select(id => ObjectId.Parse(id)).ToList();
-                await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
-            }
-                //await _repository.BulkUpdateStatusAsync<T>(failedIds, "Failed", "See logs");
+            // ⏩ Persist results to Mongo
+            if (successUpdates.Any())
+                await _repository.BulkUpdateStatusAsync<T>(successUpdates);
 
-            result.Synced = successIds.Count;
-            result.Failed = failedIds.Count;
-            //result.FailedIds = failedIds.Select(x => x.ToString()).ToList();
-            result.FailedIds = failedIds.ToList();
+            if (failedUpdates.Any())
+                await _repository.BulkUpdateStatusAsync<T>(failedUpdates);
+
+            result.Synced = successUpdates.Count;
+            result.Failed = failedUpdates.Count;
+            result.FailedIds = failedUpdates.Keys.Select(x => x.ToString()).ToList();
+
             return result;
+
+            //if (successIds.Any())
+            //{
+            //    var objectIds = successIds.Select(id => ObjectId.Parse(id)).ToList();
+            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Synced");
+            //}
+
+            //if (failedIds.Any())
+            //{
+            //    var objectIds = failedIds.Select(id => ObjectId.Parse(id)).ToList();
+            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
+            //}
         }
         //public async Task ProcessPendingRecordsAsync<T>(CancellationToken cancellationToken) where T : FhirSyncRecord
         //{

@@ -26,4 +26,10 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <Folder Include="Queries\GetCustomer\" />
+    <Folder Include="Queries\GetOrder\" />
+  </ItemGroup>
+
 </Project>
