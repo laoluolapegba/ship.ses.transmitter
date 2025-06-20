@@ -8,6 +8,7 @@ using Ship.Ses.Transmitter.Application.Patients;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.WebApi.Filters;
 using System.Net;
+using Microsoft.AspNetCore.Authorization;
 namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
 {
 
@@ -18,6 +19,7 @@ namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
     [ApiVersion("1.0")]
     [Route("api/v{version:apiVersion}/fhir-ingest")]
     [SwaggerTag("Endpoints for ingesting FHIR-compliant resources from external EMRs.")]
+    [Authorize]
     public class FhirIngestController : ControllerBase
     {
         private readonly IFhirIngestService _ingestService;

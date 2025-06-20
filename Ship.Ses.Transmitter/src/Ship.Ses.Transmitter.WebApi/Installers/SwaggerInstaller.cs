@@ -25,6 +25,10 @@ namespace Ship.Ses.Transmitter.WebApi.Installers
                 var xmlFilename = $"{Assembly.GetExecutingAssembly().GetName().Name}.xml";
                 var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFilename);
                 options.IncludeXmlComments(xmlPath);
+
+                // Add Swagger security definition and requirement here
+                options.AddSwaggerSecurityDefinition(); // <--- Call the new extension method
+
             });
         }
     }

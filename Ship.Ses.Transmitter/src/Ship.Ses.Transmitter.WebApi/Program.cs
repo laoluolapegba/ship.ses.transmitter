@@ -6,10 +6,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.Versioning;
 using Ship.Ses.Transmitter.WebApi.Installers;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.InstallAuthentication();
 // Add services to the container.
+builder.Services.AddOktaAuthentication(builder.Configuration);
 //builder.InstallEntityFramework();
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -42,6 +43,7 @@ builder.Services.AddVersionedApiExplorer(options =>
 
 builder.InstallSwagger();
 
+
 builder.InstallApplicationSettings();
 
 
@@ -63,7 +65,8 @@ app.UseSwaggerUI(options =>
     }
     options.RoutePrefix = "swagger"; // Sets the Swagger UI at /swagger
 });
-
+//configue kestrel
+//builder.Services.Configure<KestrelServerOptions>(builder.Configuration.GetSection("Kestrel"));
 
 //using (var scope = app.Services.CreateScope())
 //{

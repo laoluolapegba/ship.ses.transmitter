@@ -14,7 +14,6 @@ namespace Ship.Ses.Transmitter.WebApi.Filters
             {
                 ResourceType = "Patient",
                 ResourceId = "123",
-                ExtractSource = "api",
                 FhirJson = JsonNode.Parse(@"{
               ""resourceType"": ""Patient"",
               ""id"": ""123"",

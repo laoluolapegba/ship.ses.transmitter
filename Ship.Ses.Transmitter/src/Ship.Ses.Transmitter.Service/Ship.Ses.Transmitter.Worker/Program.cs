@@ -13,6 +13,8 @@ using Ship.Ses.Transmitter.Application.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using static Org.BouncyCastle.Math.EC.ECCurve;
 
 var builder = Host.CreateApplicationBuilder(args);
 AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
@@ -38,6 +40,7 @@ builder.Configuration.AddEnvironmentVariables();
 
 // ✅ Register Services & Observability
 builder.Services.ConfigureTracing(builder.Configuration);
+
 
 
 var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
