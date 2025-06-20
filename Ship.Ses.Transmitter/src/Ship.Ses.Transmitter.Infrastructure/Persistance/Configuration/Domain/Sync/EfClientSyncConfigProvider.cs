@@ -47,5 +47,22 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.S
                 ? Enumerable.Empty<string>()
                 : resources.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
         }
+
+        public async Task<bool> IsClientValidAsync(string clientId)
+        {
+            return await _dbContext.SyncClients
+                .AsNoTracking()
+                .AnyAsync(c => c.ClientId == clientId && c.IsActive);
+        }
+        public async Task<string?> GetFacilityIdAsync(string clientId)
+        {
+            var client = await _dbContext.SyncClients
+                .AsNoTracking()
+                .Where(c => c.ClientId == clientId && c.IsActive)
+                .Select(c => c.FacilityId)
+                .FirstOrDefaultAsync();
+
+            return client;
+        }
     }
 }

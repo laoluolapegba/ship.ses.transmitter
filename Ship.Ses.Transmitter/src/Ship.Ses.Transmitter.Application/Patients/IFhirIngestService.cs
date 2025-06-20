@@ -9,6 +9,6 @@ namespace Ship.Ses.Transmitter.Application.Patients
 {
     public interface IFhirIngestService
     {
-        Task IngestAsync(FhirIngestRequest request);
+        Task IngestAsync(FhirIngestRequest request, string clientId);
     }
 }

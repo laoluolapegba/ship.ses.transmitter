@@ -8,10 +8,10 @@ namespace Ship.Ses.Transmitter.Domain.Sync
     {
         [Key]
         [Column("client_id")]
-        public string ClientId { get; set; }
+        public required string ClientId { get; set; }
 
         [Column("client_name")]
-        public string ClientName { get; set; }
+        public required string ClientName { get; set; }
 
         [Column("is_active")]
         public bool IsActive { get; set; }
@@ -39,5 +39,9 @@ namespace Ship.Ses.Transmitter.Domain.Sync
 
         [Column("updated_at")]
         public DateTime? UpdatedAt { get; set; }
+        [Column("facility_id")]
+        public required string FacilityId { get; set; } 
+
+        
     }
 }

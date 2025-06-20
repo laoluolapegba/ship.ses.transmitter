@@ -7,5 +7,7 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
     {
         Task<bool> IsClientActiveAsync(string clientId);
         Task<IEnumerable<string>> GetEnabledResourcesAsync(string clientId);
+        Task<bool> IsClientValidAsync(string clientId);
+        Task<string?> GetFacilityIdAsync(string clientId);
     }
 }

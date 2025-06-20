@@ -28,7 +28,7 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         /// <summary>
         /// Optional metadata or source system indicator
         /// </summary>
-        [SwaggerSchema("The client id / SHIP faciltiy ID of the source EMR.")]
-        public string FacilityId { get; set; }
+        //[SwaggerSchema("The client id / SHIP faciltiy ID of the source EMR.")]
+        //public string FacilityId { get; set; }
     }
 }

@@ -9,6 +9,8 @@ using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.WebApi.Filters;
 using System.Net;
 using Microsoft.AspNetCore.Authorization;
+using System.Security.Claims;
+using Ship.Ses.Transmitter.Application.Interfaces;
 namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
 {
 
@@ -24,11 +26,13 @@ namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
     {
         private readonly IFhirIngestService _ingestService;
         private readonly ILogger<FhirIngestController> _logger;
+        private readonly IClientSyncConfigProvider _clientConfig;
 
-        public FhirIngestController(IFhirIngestService ingestService, ILogger<FhirIngestController> logger)
+        public FhirIngestController(IFhirIngestService ingestService, ILogger<FhirIngestController> logger, IClientSyncConfigProvider clientConfig)
         {
             _ingestService = ingestService;
             _logger = logger;
+            _clientConfig = clientConfig;
         }
 
         
@@ -57,7 +61,21 @@ namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
                 _logger.LogWarning("❌ Request body is null.");
                 return BadRequest("Request cannot be null.");
             }
+            var clientId = User.FindFirst("client_id")?.Value
+                    ?? User.FindFirst(ClaimTypes.NameIdentifier)?.Value;
 
+            if (string.IsNullOrEmpty(clientId))
+            {
+                _logger.LogWarning("❌ Could not extract client_id from JWT claims");
+                return Unauthorized(new { message = "Missing or invalid authentication context" });
+            }
+
+            _logger.LogInformation("🔐 Authenticated request from client: {ClientId}", clientId);
+            if (!await _clientConfig.IsClientActiveAsync(clientId))
+            {
+                _logger.LogWarning("❌ Unknown or inactive client attempted ingestion: {ClientId}", clientId);
+                return Unauthorized(new { message = $"Client '{clientId}' is not registered or not active" });
+            }
             if (string.IsNullOrWhiteSpace(request.ResourceType))
             {
                 _logger.LogWarning("❌ Missing required field: ResourceType");
@@ -67,7 +85,7 @@ namespace Ship.Ses.Transmitter.WebApi.Controllers.v1
             try
             {
                 _logger.LogInformation("📥 Ingesting FHIR resource of type {ResourceType} from EMR source.", request.ResourceType);
-                await _ingestService.IngestAsync(request);
+                await _ingestService.IngestAsync(request, clientId);
 
                 return Accepted(new
                 {

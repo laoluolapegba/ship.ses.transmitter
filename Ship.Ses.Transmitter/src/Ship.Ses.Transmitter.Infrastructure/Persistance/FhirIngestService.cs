@@ -2,6 +2,8 @@
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using MySqlX.XDevAPI;
+using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Application.Patients;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
@@ -17,16 +19,21 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
     {
         private readonly IMongoDatabase _db;
         private readonly ILogger<FhirIngestService> _logger;
+        private readonly IClientSyncConfigProvider _clientConfig;
         private const string ExtractSourceApi = "API";
-        public FhirIngestService(IMongoClient mongoClient, IOptions<SourceDbSettings> options, ILogger<FhirIngestService> logger)
+        public FhirIngestService(IMongoClient mongoClient, IOptions<SourceDbSettings> options, 
+            ILogger<FhirIngestService> logger,
+            IClientSyncConfigProvider clientConfig)
         {
             _db = mongoClient.GetDatabase(options.Value.DatabaseName);
             _logger = logger;
+            _clientConfig = clientConfig ;
         }
 
-        public async Task IngestAsync(FhirIngestRequest request)
+        public async Task IngestAsync(FhirIngestRequest request, string clientId)
         {
             var bson = BsonDocument.Parse(request.FhirJson.ToJsonString());
+            var facilityId = await _clientConfig.GetFacilityIdAsync(clientId);
 
             var record = new PatientSyncRecord  // TODO: Dynamically resolve by resourceType
             {
@@ -41,14 +48,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
                 ApiResponsePayload = null, // Initially null, will be updated after sync
                 LastAttemptAt = null,
                 SyncedResourceId = null, // Initially null, will be updated after sync
-                FacilityId = request.FacilityId, // Use default if not provided
+                FacilityId = facilityId
 
             };
 
             var collection = _db.GetCollection<PatientSyncRecord>(record.CollectionName); // or use factory
             await collection.InsertOneAsync(record);
 
-            _logger.LogInformation("✅ Ingested {ResourceType} from {Source}", request.ResourceType, request.FacilityId);
+            _logger.LogInformation("✅ Ingested {ResourceType} from {Source}", request.ResourceType, clientId);
         }
     }
 
