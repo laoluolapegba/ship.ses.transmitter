@@ -11,14 +11,31 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 {
-    public class FhirSyncRepository : IFhirSyncRepository
+    /// <summary>
+    /// Generic repository for interacting with MongoDB synchronization records.
+    /// </summary>
+    public class MongoSyncRepository : IMongoSyncRepository
     {
         private readonly IMongoDatabase _database;
 
-        public FhirSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
+        /// <summary>
+        /// Initializes a new instance of the <see cref="MongoSyncRepository"/> class.
+        /// </summary>
+        /// <param name="settings">The database settings from configuration.</param>
+        /// <param name="client">The MongoDB client.</param>
+        public MongoSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
         {
+            if (settings == null || string.IsNullOrWhiteSpace(settings.Value.DatabaseName))
+            {
+                throw new ArgumentException("SourceDbSettings or DatabaseName is not configured for MongoSyncRepository.", nameof(settings));
+            }
             _database = client.GetDatabase(settings.Value.DatabaseName);
         }
+
+        //public MongoSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
+        //{
+        //    _database = client.GetDatabase(settings.Value.DatabaseName);
+        //}
 
         public async Task<IEnumerable<T>> GetPendingRecordsAsync<T>() where T : FhirSyncRecord, new()
         {

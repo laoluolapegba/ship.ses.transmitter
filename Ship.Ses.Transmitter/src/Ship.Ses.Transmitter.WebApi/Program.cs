@@ -1,4 +1,4 @@
-using Ship.Ses.Transmitter.Infrastructure.Installers;
+﻿using Ship.Ses.Transmitter.Infrastructure.Installers;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MsSql;
 using Scalar.AspNetCore;
 using StackExchange.Redis;
@@ -7,10 +7,62 @@ using Microsoft.AspNetCore.Mvc.ApiExplorer;
 using Microsoft.AspNetCore.Mvc.Versioning;
 using Ship.Ses.Transmitter.WebApi.Installers;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Ship.Ses.Transmitter.Application.Patients;
+using Ship.Ses.Transmitter.Infrastructure.Persistance;
+using MongoDB.Driver;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
+using Microsoft.Extensions.Options;
+using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Domain.Patients;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.Sync;
+using Microsoft.EntityFrameworkCore;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 
 var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddOktaAuthentication(builder.Configuration);
+
+// Configure SourceDbSettings from appsettings.json
+builder.Services.Configure<SourceDbSettings>(builder.Configuration.GetSection("SourceDbSettings"));
+
+// Register IMongoClient as a Singleton
+builder.Services.AddSingleton<IMongoClient>(s =>
+{
+    // Get SourceDbSettings via IOptions<SourceDbSettings>
+    var settings = s.GetRequiredService<IOptions<SourceDbSettings>>().Value; 
+
+    if (string.IsNullOrEmpty(settings.ConnectionString)) 
+    {
+        throw new InvalidOperationException("SourceDbSettings:ConnectionString is not configured."); 
+    }
+    return new MongoClient(settings.ConnectionString); 
+});
+// Register IMongoSyncRepository as a Scoped service
+builder.Services.AddScoped<IMongoSyncRepository, MongoSyncRepository>();
+
+// ✅ Register Services & Observability
+builder.Services.ConfigureTracing(builder.Configuration);
+
+var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
+if (appSettings != null)
+{
+
+    var msSqlSettings = appSettings.ShipServerSqlDb;
+    builder.Services.AddDbContext<ShipServerDbContext>(options =>
+    {
+        options.UseMySQL(msSqlSettings.ConnectionString);
+    });
+}
+else
+{
+    throw new Exception("AppSettings not found");
+}
+// ... (IClientSyncConfigProvider) ...
+builder.Services.AddScoped<IClientSyncConfigProvider, EfClientSyncConfigProvider>();
+
+// Register IFhirIngestService 
+builder.Services.AddScoped<IFhirIngestService, FhirIngestService>();
 //builder.InstallEntityFramework();
 builder.Services.AddControllers();
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
@@ -45,7 +97,6 @@ builder.InstallSwagger();
 
 
 builder.InstallApplicationSettings();
-
 
 builder.InstallDependencyInjectionRegistrations();
 builder.Services.AddOpenApi();

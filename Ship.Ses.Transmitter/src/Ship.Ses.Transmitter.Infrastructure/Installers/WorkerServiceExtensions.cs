@@ -60,7 +60,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             });
 
             // ✅ Register Repositories & Services
-            services.AddScoped<IFhirSyncRepository, FhirSyncRepository>();
+            services.AddScoped<IMongoSyncRepository, MongoSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 
             //services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();

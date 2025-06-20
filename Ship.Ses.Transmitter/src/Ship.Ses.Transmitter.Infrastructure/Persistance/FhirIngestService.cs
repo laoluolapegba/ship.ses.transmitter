@@ -6,6 +6,7 @@ using MySqlX.XDevAPI;
 using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Application.Patients;
 using Ship.Ses.Transmitter.Domain.Patients;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using System;
 using System.Collections.Generic;
@@ -17,21 +18,24 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
 {
     public class FhirIngestService : IFhirIngestService
     {
-        private readonly IMongoDatabase _db;
+        private readonly IMongoSyncRepository _mongoSyncRepository;
         private readonly ILogger<FhirIngestService> _logger;
         private readonly IClientSyncConfigProvider _clientConfig;
         private const string ExtractSourceApi = "API";
-        public FhirIngestService(IMongoClient mongoClient, IOptions<SourceDbSettings> options, 
+        public FhirIngestService(IMongoSyncRepository mongoSyncRepository, IOptions<SourceDbSettings> options, 
             ILogger<FhirIngestService> logger,
             IClientSyncConfigProvider clientConfig)
         {
-            _db = mongoClient.GetDatabase(options.Value.DatabaseName);
+            _mongoSyncRepository = mongoSyncRepository;
             _logger = logger;
             _clientConfig = clientConfig ;
         }
 
         public async Task IngestAsync(FhirIngestRequest request, string clientId)
         {
+            if (request == null) throw new ArgumentNullException(nameof(request));
+            if (string.IsNullOrWhiteSpace(clientId)) throw new ArgumentException("Client ID cannot be null or empty.", nameof(clientId));
+
             var bson = BsonDocument.Parse(request.FhirJson.ToJsonString());
             var facilityId = await _clientConfig.GetFacilityIdAsync(clientId);
 
@@ -52,8 +56,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
 
             };
 
-            var collection = _db.GetCollection<PatientSyncRecord>(record.CollectionName); // or use factory
-            await collection.InsertOneAsync(record);
+            await _mongoSyncRepository.AddRecordAsync(record);
 
             _logger.LogInformation("✅ Ingested {ResourceType} from {Source}", request.ResourceType, clientId);
         }

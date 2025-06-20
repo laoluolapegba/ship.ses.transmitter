@@ -35,9 +35,9 @@
             })
             .AddJwtBearer(options =>
             {
-                options.Authority = oktaDomain + "/oauth2/default"; // Or your custom authorization server ID: "/oauth2/{yourAuthServerId}"
+                options.Authority = oktaDomain ;
                 options.Audience = oktaAudience;
-                options.RequireHttpsMetadata = true; // Always use HTTPS in production
+                options.RequireHttpsMetadata = true;
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
                     ValidateIssuer = true,
@@ -45,6 +45,54 @@
                     ValidateLifetime = true,
                     ValidateIssuerSigningKey = true
                 };
+
+                // --- IMPORTANT: ADD JWT Bearer Events for detailed logging ---
+                options.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerEvents>>();
+                        logger.LogError(context.Exception, "Authentication failed.");
+                        return Task.CompletedTask;
+                    },
+                    OnTokenValidated = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerEvents>>();
+                        logger.LogDebug("Token successfully validated for user: {UserName}", context.Principal?.Identity?.Name);
+                        // Log all claims for inspection
+                        foreach (var claim in context.Principal?.Claims ?? Array.Empty<System.Security.Claims.Claim>())
+                        {
+                            logger.LogDebug("Claim - Type: {ClaimType}, Value: {ClaimValue}", claim.Type, claim.Value);
+                        }
+                        return Task.CompletedTask;
+                    },
+                    OnForbidden = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerEvents>>();
+                        logger.LogWarning("Forbidden: The authenticated user is not authorized to access this resource.");
+                        return Task.CompletedTask;
+                    },
+                    OnChallenge = context =>
+                    {
+                        // This event is called when authentication fails (e.g., token missing, invalid, or expired)
+                        // It's a good place to log why the challenge occurred.
+                        var logger = context.HttpContext.RequestServices.GetRequiredService<ILogger<JwtBearerEvents>>();
+                        if (context.AuthenticateFailure != null)
+                        {
+                            logger.LogError(context.AuthenticateFailure, "Authentication challenge failed: {ErrorMessage}", context.AuthenticateFailure.Message);
+                        }
+                        else if (!string.IsNullOrEmpty(context.ErrorDescription))
+                        {
+                            logger.LogWarning("Authentication challenge: {Error} - {ErrorDescription}", context.Error, context.ErrorDescription);
+                        }
+                        else
+                        {
+                            logger.LogWarning("Authentication challenge occurred (no specific error details provided).");
+                        }
+                        return Task.CompletedTask;
+                    }
+                };
+                // --- END JWT Bearer Events ---
             });
 
             services.AddAuthorization(); // Add authorization services

@@ -20,11 +20,11 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 {
     public class FhirSyncService : IFhirSyncService
     {
-        private readonly IFhirSyncRepository _repository;
+        private readonly IMongoSyncRepository _repository;
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
 
-        public FhirSyncService(IFhirSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService)
+        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService)
         {
             _repository = repository;
             _logger = logger;

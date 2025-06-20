@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Domain.Patients
 {
-    public interface IFhirSyncRepository
+    public interface IMongoSyncRepository
     {
         //Task<IEnumerable<FhirSyncRecord>> GetPendingRecordsAsync(FhirResourceType resourceType);
         Task<IEnumerable<T>> GetPendingRecordsAsync<T>() where T : FhirSyncRecord, new();
