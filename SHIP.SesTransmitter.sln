@@ -9,8 +9,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Domain
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Infrastructure", "Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.Infrastructure\Ship.Ses.Transmitter.Infrastructure.csproj", "{3BFC5B00-F84F-490B-AB82-59C6B352E3C7}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.WebApi", "Ship.Ses.Transmitter\src\Ship.Ses.Transmitter.WebApi\Ship.Ses.Transmitter.WebApi.csproj", "{7A23AD77-CF9B-4AA8-ADD1-AA4061D8AEE6}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Application.UnitTests", "Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Application.UnitTests\Ship.Ses.Transmitter.Application.UnitTests.csproj", "{20239209-8B7C-4D41-AD61-6C43F13379F3}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ship.Ses.Transmitter.Domain.UnitTests", "Ship.Ses.Transmitter\tests\Ship.Ses.Transmitter.Domain.UnitTests\Ship.Ses.Transmitter.Domain.UnitTests.csproj", "{D7E19EB5-185A-4EEA-B41F-FA0CA337D1A3}"
@@ -42,10 +40,6 @@ Global
 		{3BFC5B00-F84F-490B-AB82-59C6B352E3C7}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{3BFC5B00-F84F-490B-AB82-59C6B352E3C7}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{3BFC5B00-F84F-490B-AB82-59C6B352E3C7}.Release|Any CPU.Build.0 = Release|Any CPU
-		{7A23AD77-CF9B-4AA8-ADD1-AA4061D8AEE6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{7A23AD77-CF9B-4AA8-ADD1-AA4061D8AEE6}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{7A23AD77-CF9B-4AA8-ADD1-AA4061D8AEE6}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{7A23AD77-CF9B-4AA8-ADD1-AA4061D8AEE6}.Release|Any CPU.Build.0 = Release|Any CPU
 		{20239209-8B7C-4D41-AD61-6C43F13379F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{20239209-8B7C-4D41-AD61-6C43F13379F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{20239209-8B7C-4D41-AD61-6C43F13379F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
