@@ -12,9 +12,9 @@ This service is implemented using **.NET Core**, following **Domain-Driven Desig
 
 ## Features
 ✅ **Multiple Data Transmission Methods**:
-- **gRPC API** (for high-performance communication).
+
 - **REST API (OAuth2.0 JWT Authentication)**.
-- **Message Queue (Kafka, RabbitMQ)** for asynchronous data streaming.
+
 
 ✅ Implements **batch and real-time data transmission**.  
 ✅ Supports **TLS 1.3 encryption** for secure data transmission.  
@@ -47,10 +47,9 @@ ship.ses.transmitter/
 
 ## Installation
 ### **Prerequisites**
-- **.NET 8.0+**
+- **.NET 9.0+**
 - **Docker** (for containerized deployments)
-- **gRPC & REST API support**
-- **RabbitMQ / Kafka** (for message queuing)
+
 
 ### **Clone the Repository**
 ```sh
@@ -62,13 +61,6 @@ cd ship.ses.transmitter
 - Copy `.env.example` to `.env` and configure your environment variables:
   ```sh
   cp .env.example .env
-  ```
-
-- Edit `.env` with your preferred settings:
-  ```ini
-  SHIP_GRPC_URL="ship.platform.com:50051"
-  SHIP_API_URL="https://api.ship.platform.com"
-  MESSAGE_QUEUE="kafka://ship.platform.com:9092"
   ```
 
 ---
@@ -112,10 +104,6 @@ Example `appsettings.json`:
     "Method": "gRPC", // Options: gRPC, REST, Kafka
     "RetryCount": 3,
     "BatchSize": 10
-  },
-  "ApiSettings": {
-    "GrpcUrl": "ship.platform.com:50051",
-    "RestApiBaseUrl": "https://api.ship.platform.com"
   }
 }
 ```
@@ -170,13 +158,13 @@ az aks deploy --name ses-transmitter --image mycontainerregistry/ses-transmitter
 ---
 
 ## License
-📜 **
+ **
 
 ---
 
 ## Contacts & Support
-- 📧 **Support**: support@
-- 🚀 **Contributors**: @
-- 📚 **Docs**: [Confluence Page](https://confluence.ses.io/docs)
+-  **Support**: support@
+-  **Contributors**: @
+-  **Docs**: [Confluence Page](https://confluence.ses.io/docs)
 
 ---

@@ -1,4 +1,5 @@
 ﻿using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Extensions;
 using MongoDB.Bson;
 using MongoDB.Bson.IO;
@@ -9,6 +10,7 @@ using Ship.Ses.Transmitter.Domain.Enums;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Services;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Infrastructure.Shared;
 using System;
 using System.Collections.Generic;
@@ -23,12 +25,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly IMongoSyncRepository _repository;
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
+        private readonly IOptionsMonitor<FhirApiSettings> _apiSettings;
 
-        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService)
+        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, IOptionsMonitor<FhirApiSettings> apiSettings)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
+            _apiSettings = apiSettings;
         }
 
         public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new()
@@ -50,6 +54,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             {
                 try
                 {
+                    var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
+                    if (string.IsNullOrWhiteSpace(callbackUrl))
+                        throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
+
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
                     var apiResponse = await _fhirApiService.SendAsync(
@@ -57,10 +65,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     record.ResourceType,
                     record.ResourceId,
                     record.FhirJson.ToCleanJson(),
-                    callbackUrl: "https://myfacility.health.ng/ship/fhir/ack",
+                    callbackUrl,
                     token);
 
-                    // ✅ Interpret the FHIR API response
+                    //  Interpret the FHIR API response
                     if (apiResponse != null && apiResponse.Status?.ToLower() == "success" && apiResponse.Code == 202)
                     {
                         successUpdates.Add(ObjectId.Parse(record.Id), (
@@ -69,7 +77,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             transactionId: apiResponse?.transactionId ?? string.Empty,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
+                        _logger.LogInformation("Sync success for {Id}", record.ResourceId);
                     }
                     else
                     {
@@ -103,7 +111,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                 }
             }
 
-            // ⏩ Persist results to Mongo
+            // Persist results to Mongo
             if (successUpdates.Any())
                 await _repository.BulkUpdateStatusAsync<T>(successUpdates);
 
@@ -127,6 +135,20 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             //    var objectIds = failedIds.Select(id => ObjectId.Parse(id)).ToList();
             //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
             //}
+        }
+        private static string BuildCallbackUrl(string template, FhirSyncRecord record)
+        {
+            if (string.IsNullOrWhiteSpace(template)) return null;
+
+            string safe(string s) => string.IsNullOrEmpty(s) ? "" : Uri.EscapeDataString(s);
+
+            var url = template
+                .Replace("{facilityId}", safe(record.FacilityId), StringComparison.OrdinalIgnoreCase)
+                .Replace("{resourceType}", safe(record.ResourceType), StringComparison.OrdinalIgnoreCase)
+                .Replace("{resourceId}", safe(record.ResourceId), StringComparison.OrdinalIgnoreCase)
+                .Replace("{transactionId}", safe(record.TransactionId), StringComparison.OrdinalIgnoreCase);
+
+            return Uri.TryCreate(url, UriKind.Absolute, out var _) ? url : null;
         }
         //public async Task ProcessPendingRecordsAsync<T>(CancellationToken cancellationToken) where T : FhirSyncRecord
         //{

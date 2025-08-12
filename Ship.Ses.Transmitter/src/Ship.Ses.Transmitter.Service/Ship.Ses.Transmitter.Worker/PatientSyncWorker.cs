@@ -33,12 +33,12 @@ namespace Ship.Ses.Transmitter.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("🚀 PatientSyncWorker: Entered ExecuteAsync");
-            _logger.LogInformation("🚀 Starting Patient Sync Worker...");
+            //_logger.LogInformation("🚀 PatientSyncWorker: Entered ExecuteAsync");
+            _logger.LogInformation("Starting Patient Sync Worker...");
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                _logger.LogInformation("🔁 PatientSyncWorker: Beginning sync loop");
+                _logger.LogInformation("PatientSyncWorker: Beginning sync loop");
                 try
                 {
                     using var scope = _sp.CreateScope();
@@ -66,7 +66,7 @@ namespace Ship.Ses.Transmitter.Worker
                     {
                         var result = await syncService.ProcessPendingRecordsAsync<PatientSyncRecord>(stoppingToken);
 
-                        _logger.LogInformation("✅ Synced Patient records: Total={Total}, Synced={Synced}, Failed={Failed}",
+                        _logger.LogInformation("Synced Patient records: Total={Total}, Synced={Synced}, Failed={Failed}",
                             result.Total, result.Synced, result.Failed);
                     }
                 }

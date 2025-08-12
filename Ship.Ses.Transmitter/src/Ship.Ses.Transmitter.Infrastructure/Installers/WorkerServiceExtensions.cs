@@ -41,17 +41,17 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
         private static readonly TextMapPropagator Propagator = new TraceContextPropagator();
         public static void AddAppServices(this IServiceCollection services, IConfiguration configuration)
         {
-            // ✅ Bind DatabaseSettings from appsettings.json
+            //  Bind DatabaseSettings from appsettings.json
             services.Configure<SourceDbSettings>(configuration.GetSection("SourceDbSettings"));
 
-            // ✅ Register MongoDB Client
+            //  Register MongoDB Client
             services.AddSingleton<IMongoClient>(sp =>
             {
                 var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
                 return new MongoClient(settings.ConnectionString);
             });
 
-            // ✅ Register MongoDB Database
+            //  Register MongoDB Database
             services.AddScoped(sp =>
             {
                 var client = sp.GetRequiredService<IMongoClient>();
@@ -59,7 +59,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
                 return client.GetDatabase(settings.DatabaseName);
             });
 
-            // ✅ Register Repositories & Services
+            //  Register Repositories & Services
             services.AddScoped<IMongoSyncRepository, MongoSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 

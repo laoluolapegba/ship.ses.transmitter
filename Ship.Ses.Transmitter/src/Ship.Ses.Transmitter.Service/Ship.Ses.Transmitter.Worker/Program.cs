@@ -20,7 +20,7 @@ var builder = Host.CreateApplicationBuilder(args);
 AppContext.SetSwitch("System.Net.Http.SocketsHttpHandler.Http2UnencryptedSupport", true);
 
 builder.Logging.ClearProviders();
-// ✅ Configure Serilog with ElasticSearch & CorrelationId
+//  Configure Serilog with ElasticSearch & CorrelationId
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
@@ -34,11 +34,17 @@ Log.Logger = new LoggerConfiguration()
     .CreateLogger();
 builder.Logging.AddSerilog();
 
-// ✅ Load Configuration (Supports appsettings.json & Environment Variables)
+
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 builder.Configuration.AddEnvironmentVariables();
 
-// ✅ Register Services & Observability
+builder.Services
+    .AddOptions<FhirApiSettings>()
+    .Bind(builder.Configuration.GetSection("FhirApi"))
+    .Validate(o => !string.IsNullOrWhiteSpace(o.BaseUrl), "FhirApi:BaseUrl is required")
+    .Validate(o => o.TimeoutSeconds > 0, "FhirApi:TimeoutSeconds must be > 0")
+    .ValidateOnStart();
+
 builder.Services.ConfigureTracing(builder.Configuration);
 
 
@@ -67,7 +73,7 @@ builder.Services
     .AddFhirApiClient(builder.Configuration)
     .AddSyncMetrics(builder.Configuration);
 
-// ✅ Register Background Workers for Each FHIR Resource Type
+//  Register Background Workers for Each FHIR Resource Type
 
 
 builder.Services.AddHostedService<PatientSyncWorker>();
