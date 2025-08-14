@@ -15,30 +15,6 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MySql
 
         public StagingUpdateWriter(IDbContextFactory<ExtractorStagingDbContext> factory) => _factory = factory;
 
-        public async Task BulkMarkSubmittedAsync(IEnumerable<StagingTransmissionMark> marks, CancellationToken ct)
-        {
-            var list = marks?.ToList() ?? [];
-            if (list.Count == 0) return;
-
-            await using var db = await _factory.CreateDbContextAsync(ct);
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
-
-            // Fast updates; one round-trip per row is fine for moderate batches.
-            // If you need extreme throughput, switch to ADO.NET and batch statements within the transaction.
-            foreach (var m in list)
-            {
-                await db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE fhir_staging 
-                    SET status = 'SUBMITTED',
-                        ship_submit_txid  = {1},
-                        updated_at = {0}
-                  WHERE id = {2} AND (status IS NULL OR status <> 'SUBMITTED')",
-                    m.SubmittedAtUtc, m.ShipSubmitTxId, m.StagingId, ct);
-            }
-
-            await tx.CommitAsync(ct);
-        }
-
         public async Task BulkMarkFailedAsync(IEnumerable<long> stagingIds, CancellationToken ct)
         {
             var ids = stagingIds?.Distinct().ToList() ?? [];
@@ -49,11 +25,35 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MySql
 
             foreach (var id in ids)
             {
-                await db.Database.ExecuteSqlRawAsync(
-                    @"UPDATE fhir_staging 
-                    SET status = 'FAILED',
-                        updated_at = UTC_TIMESTAMP(6)
-                  WHERE id = {0}", id, ct);
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"UPDATE ship_fhir_resources 
+               SET status='FAILED', updated_at=UTC_TIMESTAMP(6)
+               WHERE id = {id};",
+                    ct);
+            }
+
+            await tx.CommitAsync(ct);
+        }
+
+        public async Task BulkMarkSubmittedAsync(IEnumerable<StagingTransmissionMark> marks, CancellationToken ct)
+        {
+            var list = marks?.ToList() ?? [];
+            if (list.Count == 0) return;
+
+            await using var db = await _factory.CreateDbContextAsync(ct);
+            await using var tx = await db.Database.BeginTransactionAsync(ct);
+
+            foreach (var m in list)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                    $@"UPDATE ship_fhir_resources 
+               SET status='SUBMITTED',
+                   ship_processed_at = {m.SubmittedAtUtc},
+                   ship_submit_txid  = {m.ShipSubmitTxId},
+                   updated_at        = {m.SubmittedAtUtc}
+               WHERE id = {m.StagingId}
+                 AND (status IS NULL OR status <> 'SUBMITTED');",
+                    ct);
             }
 
             await tx.CommitAsync(ct);

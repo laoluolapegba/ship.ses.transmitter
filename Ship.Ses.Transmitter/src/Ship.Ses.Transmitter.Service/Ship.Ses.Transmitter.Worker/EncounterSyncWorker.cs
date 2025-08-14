@@ -63,7 +63,7 @@ namespace Ship.Ses.Transmitter.Worker
                     var correlationId = Guid.NewGuid().ToString();
                     using (Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId))
                     {
-                        var result = await syncService.ProcessPendingRecordsAsync<PatientSyncRecord>(stoppingToken);
+                        var result = await syncService.ProcessPendingRecordsAsync<EncounterSyncRecord>(stoppingToken);
 
                         _logger.LogInformation("✅ Synced Encounter records: Total={Total}, Synced={Synced}, Failed={Failed}",
                             result.Total, result.Synced, result.Failed);
