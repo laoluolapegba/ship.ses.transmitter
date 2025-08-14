@@ -1,4 +1,6 @@
-﻿using Microsoft.Extensions.Logging;
+﻿using AngleSharp.Io;
+using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Extensions;
 using MongoDB.Bson;
@@ -9,6 +11,7 @@ using Ship.Ses.Transmitter.Application.Sync;
 using Ship.Ses.Transmitter.Domain.Enums;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Services;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Infrastructure.Shared;
@@ -26,13 +29,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
         private readonly IOptionsMonitor<FhirApiSettings> _apiSettings;
+        private readonly IStagingUpdateWriter _stagingUpdateWriter;
 
-        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, IOptionsMonitor<FhirApiSettings> apiSettings)
+        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, 
+            IOptionsMonitor<FhirApiSettings> apiSettings, IStagingUpdateWriter stagingUpdateWriter)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
             _apiSettings = apiSettings;
+            _stagingUpdateWriter = stagingUpdateWriter;
         }
 
         public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new()
@@ -49,6 +55,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             var successUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
             var failedUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
+
+            var marksToSubmit = new List<StagingTransmissionMark>();
+            var marksToFail = new List<long>();
 
             foreach (var record in records)
             {
@@ -67,6 +76,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     record.FhirJson.ToCleanJson(),
                     callbackUrl,
                     token);
+
 
                     //  Interpret the FHIR API response
                     if (apiResponse != null && apiResponse.Status?.ToLower() == "success" && apiResponse.Code == 202)
@@ -90,12 +100,25 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.ResourceId, apiResponse?.Message);
                     }
 
-                    //record.Status = "Synced";
-                    //record.TimeSynced = DateTime.UtcNow;
-                    //record.ErrorMessage = null;
-                    //record.SyncedResourceId = apiResponse?.transactionId;
-                    //record.ErrorMessage = null;
-                    //successIds.Add(record.Id);
+
+                    var accepted = apiResponse != null
+                       && apiResponse.Status?.Equals("success", StringComparison.OrdinalIgnoreCase) == true
+                       && apiResponse.Code == 202;
+
+                    if (record.StagingId.HasValue)
+                    {
+                        if (accepted)
+                        {
+                            marksToSubmit.Add(new StagingTransmissionMark(
+                                record.StagingId.Value,
+                                apiResponse.transactionId,
+                                DateTime.UtcNow));
+                        }
+                        else
+                        {
+                            marksToFail.Add(record.StagingId.Value);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -106,9 +129,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         rawResponse: System.Text.Json.JsonSerializer.Serialize(new { Error = ex.Message, StackTrace = ex.StackTrace })
 
                     ));
+                    if (record.StagingId.HasValue)
+                        marksToFail.Add(record.StagingId.Value);
 
                     _logger.LogError(ex, "❌ Sync failed for {Id}: {Message}", record.ResourceId, ex.Message);
                 }
+
+                
             }
 
             // Persist results to Mongo
@@ -122,6 +149,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             result.Failed = failedUpdates.Count;
             result.FailedIds = failedUpdates.Keys.Select(x => x.ToString()).ToList();
 
+            await _stagingUpdateWriter.BulkMarkSubmittedAsync(marksToSubmit, token);
+            await _stagingUpdateWriter.BulkMarkFailedAsync(marksToFail, token);
             return result;
 
             //if (successIds.Any())

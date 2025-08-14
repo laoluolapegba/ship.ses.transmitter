@@ -1,19 +1,13 @@
 ﻿//using Google.Protobuf.WellKnownTypes;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Serilog;
 using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Infrastructure.Installers;
-using Ship.Ses.Transmitter.Worker;
-using System.Linq;
-using System.Security.Authentication;
-using System.Security.Cryptography.X509Certificates;
-using static K4os.Compression.LZ4.Engine.Pubternal;
-using Polly;
-using Polly.Extensions.Http;
-using Ship.Ses.Transmitter.Application.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Server.Kestrel.Core;
+using Ship.Ses.Transmitter.Worker;
 using static Org.BouncyCastle.Math.EC.ECCurve;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -24,13 +18,7 @@ builder.Logging.ClearProviders();
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.FromLogContext()
-    .Enrich.WithCorrelationId()
-    .WriteTo.Elasticsearch(new Serilog.Sinks.Elasticsearch.ElasticsearchSinkOptions(
-        new Uri(builder.Configuration["ElasticSearch:Uri"] ?? "http://localhost:9200"))
-    {
-        AutoRegisterTemplate = true,
-        IndexFormat = "logs-{0:yyyy.MM.dd}"
-    })
+    .Enrich.WithCorrelationId()    
     .CreateLogger();
 builder.Logging.AddSerilog();
 
@@ -45,7 +33,7 @@ builder.Services
     .Validate(o => o.TimeoutSeconds > 0, "FhirApi:TimeoutSeconds must be > 0")
     .ValidateOnStart();
 
-builder.Services.ConfigureTracing(builder.Configuration);
+//builder.Services.ConfigureTracing(builder.Configuration);
 
 
 
@@ -58,12 +46,19 @@ if (appSettings != null)
     {
         options.UseMySQL(msSqlSettings.ConnectionString);
     });
+
+    builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
+    {
+        //var cs = builder.Configuration.GetConnectionString(msSqlSettings.ConnectionString);
+        opts.UseMySQL(msSqlSettings.ConnectionString);
+    });
 }
 else
 {
     throw new Exception("AppSettings not found");
 }
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
+
 
 
 
@@ -78,13 +73,15 @@ builder.Services
 
 builder.Services.AddHostedService<PatientSyncWorker>();
 builder.Services.AddHostedService<EncounterSyncWorker>();
+builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
+
 //builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 
 
-var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
-Console.WriteLine(test == null
-    ? "❌ ISyncMetricsCollector not registered"
-    : "✅ ISyncMetricsCollector is registered");
+//var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
+//Console.WriteLine(test == null
+//    ? "❌ ISyncMetricsCollector not registered"
+//    : "✅ ISyncMetricsCollector is registered");
 
 var app = builder.Build();
 

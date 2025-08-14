@@ -58,6 +58,9 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         public string FacilityId { get; set; }
         // Derived classes must override collection name
         public abstract string CollectionName { get; }
+        [BsonElement("stagingId")]
+        [BsonRepresentation(BsonType.Int64)]
+        public long? StagingId { get; set; }
 
     }
 }
