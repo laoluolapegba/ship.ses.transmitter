@@ -34,7 +34,7 @@ namespace Ship.Ses.Transmitter.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("🚀 Starting Encounter Sync Worker...");
+            _logger.LogInformation("Starting Encounter Sync Worker...");
 
             while (!stoppingToken.IsCancellationRequested)
             {

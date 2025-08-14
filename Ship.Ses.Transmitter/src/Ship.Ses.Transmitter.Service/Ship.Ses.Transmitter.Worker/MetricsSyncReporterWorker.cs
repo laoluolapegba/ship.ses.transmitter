@@ -62,13 +62,13 @@ namespace Ship.Ses.Transmitter.Worker
                         //var statts = new SyncClientStatus { ClientId = _clientId };
                         _logger.LogInformation("Writing current sync status: {status}", JsonSerializer.Serialize(status));
                         await writer.WriteStatusAsync(status);
-                        await writer.WriteMetricsAsync(metrics); // ✅ bulk write
+                        await writer.WriteMetricsAsync(metrics); 
                         //foreach (var metric in metrics)
                         //{
                         //    await writer.WriteMetricAsync(metric);
                         //}
 
-                        _logger.LogInformation("✅ Sync metrics written for {ClientId}", _clientId);
+                        _logger.LogInformation("Sync metrics written for {ClientId}", _clientId);
                     }
                     catch (Exception ex)
                     {

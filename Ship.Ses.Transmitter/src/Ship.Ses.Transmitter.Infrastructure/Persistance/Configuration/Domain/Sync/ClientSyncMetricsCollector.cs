@@ -35,7 +35,6 @@ namespace Ship.Ses.Transmitter.Worker
             {
                 { "Patient", typeof(PatientSyncRecord) },
                 { "Encounter", typeof(EncounterSyncRecord) }
-                // Add new resource mappings here
             };
         }
 
@@ -45,7 +44,7 @@ namespace Ship.Ses.Transmitter.Worker
 
             return new SyncClientStatus
             {
-                ClientId = clientId,
+                ClientId = clientId, 
                 Status = "Running",
                 LastCheckIn = DateTime.UtcNow,
                 LastSyncedAt = DateTime.UtcNow,
