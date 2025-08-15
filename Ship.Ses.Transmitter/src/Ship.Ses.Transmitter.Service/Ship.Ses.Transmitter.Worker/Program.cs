@@ -35,28 +35,69 @@ builder.Services
 
 //builder.Services.ConfigureTracing(builder.Configuration);
 
-
-
-var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
-if (appSettings != null)
+builder.Services
+    .AddOptions<AppSettings>()
+    .Bind(builder.Configuration.GetSection("AppSettings"))
+    .ValidateDataAnnotations()
+    .Validate(o =>
+        o.ShipServerSqlDb is not null &&
+        !string.IsNullOrWhiteSpace(o.ShipServerSqlDb.DbType) &&
+        o.EmrDb is not null &&
+        !string.IsNullOrWhiteSpace(o.EmrDb.DbType),
+        "Both ShipServerSqlDb and EmrDb must be configured")
+    .ValidateOnStart();
+static void UseProvider(DbContextOptionsBuilder opts, DatabaseSettings db)
 {
-
-    var msSqlSettings = appSettings.ShipServerSqlDb;
-    builder.Services.AddDbContext<ShipServerDbContext>(options =>
+    var kind = db.DbType.Trim().ToLowerInvariant();
+    switch (kind)
     {
-        options.UseMySQL(msSqlSettings.ConnectionString);
-    });
-
-    builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
-    {
-        //var cs = builder.Configuration.GetConnectionString(msSqlSettings.ConnectionString);
-        opts.UseMySQL(msSqlSettings.ConnectionString);
-    });
+        case "mysql":
+            opts.UseMySQL(db.ConnectionString);      
+            break;
+        case "postgres":
+        case "postgresql":
+            opts.UseNpgsql(db.ConnectionString); 
+            break;
+        case "sqlserver":
+            opts.UseSqlServer(db.ConnectionString); 
+            break;
+        default:
+            throw new InvalidOperationException($"Unsupported DbType: {db.DbType}");
+    }
 }
-else
+
+builder.Services.AddDbContext<ShipServerDbContext>(opts =>
 {
-    throw new Exception("AppSettings not found");
-}
+    var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
+    UseProvider(opts, app.ShipServerSqlDb);
+});
+
+builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
+{
+    var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
+    UseProvider(opts, app.EmrDb);
+});
+
+
+//var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
+//if (appSettings != null)
+//{
+
+//    var msSqlSettings = appSettings.ShipServerSqlDb;
+//    builder.Services.AddDbContext<ShipServerDbContext>(options =>
+//    {
+//        options.UseMySQL(msSqlSettings.ConnectionString);
+//    });
+
+//    builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
+//    {
+//        opts.UseMySQL(msSqlSettings.ConnectionString);
+//    });
+//}
+//else
+//{
+//    throw new Exception("AppSettings not found");
+//}
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
 
 
@@ -72,7 +113,7 @@ builder.Services
 
 
 builder.Services.AddHostedService<PatientSyncWorker>();
-builder.Services.AddHostedService<EncounterSyncWorker>();
+//builder.Services.AddHostedService<EncounterSyncWorker>();
 builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
 
 //builder.Services.AddHostedService<MetricsSyncReporterWorker>();
