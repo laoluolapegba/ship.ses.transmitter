@@ -16,5 +16,7 @@
         public required string ConnectionString { get; init; }
         /// <summary>mysql | postgres | sqlserver</summary>
         public required string DbType { get; init; }
+        public string? Schema { get; init; }
+
     }
 }

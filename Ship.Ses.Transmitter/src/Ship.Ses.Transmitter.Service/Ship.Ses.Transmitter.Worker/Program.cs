@@ -46,21 +46,27 @@ builder.Services
         !string.IsNullOrWhiteSpace(o.EmrDb.DbType),
         "Both ShipServerSqlDb and EmrDb must be configured")
     .ValidateOnStart();
-static void UseProvider(DbContextOptionsBuilder opts, DatabaseSettings db)
+static void UseProviderWithSchema(DbContextOptionsBuilder opts, DatabaseSettings db)
 {
     var kind = db.DbType.Trim().ToLowerInvariant();
+    var schema = string.IsNullOrWhiteSpace(db.Schema) ? null : db.Schema;
+
     switch (kind)
     {
-        case "mysql":
-            opts.UseMySQL(db.ConnectionString);      
-            break;
         case "postgres":
         case "postgresql":
-            opts.UseNpgsql(db.ConnectionString); 
+            var cs = schema is null ? db.ConnectionString : $"{db.ConnectionString};Search Path={schema}";
+            opts.UseNpgsql(cs);
             break;
+
         case "sqlserver":
-            opts.UseSqlServer(db.ConnectionString); 
+            opts.UseSqlServer(db.ConnectionString);
             break;
+
+        case "mysql":
+            opts.UseMySQL(db.ConnectionString);
+            break;
+
         default:
             throw new InvalidOperationException($"Unsupported DbType: {db.DbType}");
     }
@@ -69,13 +75,13 @@ static void UseProvider(DbContextOptionsBuilder opts, DatabaseSettings db)
 builder.Services.AddDbContext<ShipServerDbContext>(opts =>
 {
     var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
-    UseProvider(opts, app.ShipServerSqlDb);
+    UseProviderWithSchema(opts, app.ShipServerSqlDb);
 });
 
 builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
 {
     var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
-    UseProvider(opts, app.EmrDb);
+    UseProviderWithSchema(opts, app.EmrDb);
 });
 
 
