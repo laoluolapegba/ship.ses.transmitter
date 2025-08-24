@@ -29,7 +29,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.S
                 .Select(c => c.IsActive)
                 .FirstOrDefaultAsync();
 
-            _logger.LogDebug("🔎 Client {ClientId} active status: {Status}", clientId, isActive);
+            _logger.LogDebug("🔎 ClientId {ClientId} active status: {Status}", clientId, isActive);
             return isActive;
         }
 
@@ -41,7 +41,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.S
                 .Select(c => c.EnabledResources)
                 .FirstOrDefaultAsync();
 
-            _logger.LogDebug("🔎 Client {ClientId} enabled resources: {Resources}", clientId, resources ?? "null");
+            _logger.LogDebug("🔎 ClientId {ClientId} enabled resources: {Resources}", clientId, resources ?? "null");
 
             return string.IsNullOrEmpty(resources)
                 ? Enumerable.Empty<string>()
@@ -54,15 +54,15 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.S
                 .AsNoTracking()
                 .AnyAsync(c => c.ClientId == clientId && c.IsActive);
         }
-        public async Task<string?> GetFacilityIdAsync(string clientId)
-        {
-            var client = await _dbContext.SyncClients
-                .AsNoTracking()
-                .Where(c => c.ClientId == clientId && c.IsActive)
-                .Select(c => c.FacilityId)
-                .FirstOrDefaultAsync();
+        //public async Task<string?> GetFacilityIdAsync(string clientId)
+        //{
+        //    var client = await _dbContext.SyncClients
+        //        .AsNoTracking()
+        //        .Where(c => c.ClientId == clientId && c.IsActive)
+        //        .Select(c => c.FacilityId)
+        //        .FirstOrDefaultAsync();
 
-            return client;
-        }
+        //    return client;
+        //}
     }
 }

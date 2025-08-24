@@ -7,6 +7,9 @@ namespace Ship.Ses.Transmitter.Domain.Sync
     public class SyncClient
     {
         [Key]
+        [Column("facility_id")]
+        public required string FacilityId { get; set; }
+
         [Column("client_id")]
         public required string ClientId { get; set; }
 
@@ -20,7 +23,7 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string EnabledResources { get; set; } // e.g. "Patient,Encounter"
 
         [Column("allowed_ips")]
-        public string AllowedIpRanges { get; set; } // e.g. "192.168.1.0/24"
+        public string AllowedIpRanges { get; set; } 
 
         [Column("sync_endpoint")]
         public string SyncEndpoint { get; set; } // Optional: callback or handshake endpoint
@@ -39,9 +42,7 @@ namespace Ship.Ses.Transmitter.Domain.Sync
 
         [Column("updated_at")]
         public DateTime? UpdatedAt { get; set; }
-        [Column("facility_id")]
-        public required string FacilityId { get; set; } 
-
+        
         
     }
 }

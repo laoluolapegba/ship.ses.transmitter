@@ -17,17 +17,19 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.MySql
 
         public async Task BulkMarkFailedAsync(IEnumerable<long> stagingIds, CancellationToken ct)
         {
-            var ids = stagingIds?.Distinct().ToList() ?? [];
-            if (ids.Count == 0) return;
+            var ids = stagingIds?.Distinct().ToArray() ?? Array.Empty<long>();
+            if (ids.Length == 0) return;
 
             await using var db = await _factory.CreateDbContextAsync(ct);
             await using var tx = await db.Database.BeginTransactionAsync(ct);
 
+            var now = DateTime.UtcNow;
+
             foreach (var id in ids)
             {
                 await db.Database.ExecuteSqlInterpolatedAsync(
-                    $@"UPDATE ship_fhir_resources 
-               SET status='FAILED', updated_at=UTC_TIMESTAMP(6)
+                    $@"UPDATE ship_fhir_resources
+               SET status = 'FAILED', updated_at = {now}
                WHERE id = {id};",
                     ct);
             }

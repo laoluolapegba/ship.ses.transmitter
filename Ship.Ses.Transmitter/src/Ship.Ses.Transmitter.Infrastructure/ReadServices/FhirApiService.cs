@@ -101,24 +101,67 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
                 using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                var responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
 
-                _logger.LogInformation("📬 Response Body: {ResponseBody}", responseBody);
+                var mediaType = response.Content?.Headers?.ContentType?.MediaType;
+                var responseRaw = response.Content is null ? null : await response.Content.ReadAsStringAsync(cancellationToken);
 
-                var deserialized = JsonSerializer.Deserialize<FhirApiResponse>(responseBody);
+                _logger.LogInformation("📬 SHIP FHIR replied HTTP {Status}. Content-Type={CT}. Body: {Body}",
+                    (int)response.StatusCode,
+                    mediaType ?? "(none)",
+                    Trunc(responseRaw, 1000));
 
+                FhirApiResponse? parsed = null;
+
+                // Only try to parse when there is a non-empty, JSON-looking payload
+                if (!string.IsNullOrWhiteSpace(responseRaw) && LooksLikeJson(mediaType, responseRaw))
+                {
+                    try
+                    {
+                        parsed = JsonSerializer.Deserialize<FhirApiResponse>(
+                            responseRaw,
+                            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                    }
+                    catch (JsonException jex)
+                    {
+                        _logger.LogWarning(jex, "⚠️ Failed to parse JSON response. Body (truncated): {Body}", Trunc(responseRaw, 1000));
+                    }
+                }
+
+                // If HTTP is non-success, return a structured error (don’t throw here)
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning("⚠️ {StatusCode} - {Message}", response.StatusCode, deserialized?.Message);
-                    _logger.LogDebug("❗ Error details: {@Error}", deserialized);
+                    var message = parsed?.Message;
+                    if (string.IsNullOrWhiteSpace(message))
+                        message = !string.IsNullOrWhiteSpace(responseRaw) ? Trunc(responseRaw, 200) : response.ReasonPhrase ?? "HTTP error";
 
-                    response.EnsureSuccessStatusCode(); // will still throw
+                    var error = new FhirApiResponse
+                    {
+                        Status = parsed?.Status ?? "error",
+                        Code = (int)response.StatusCode,
+                        Message = message,
+                        transactionId = parsed?.transactionId
+                    };
+
+                    _logger.LogWarning("⚠️ {StatusCode} - {Message}", response.StatusCode, error.Message);
+                    _logger.LogDebug("❗ Error payload: {@Payload}", parsed ?? (object)responseRaw ?? "(empty)");
+                    return error;
+                }
+
+                // Success path: if no JSON body, synthesize a minimal success response
+                if (parsed is null)
+                {
+                    parsed = new FhirApiResponse
+                    {
+                        Status = "success",
+                        Code = (int)response.StatusCode,
+                        Message = string.IsNullOrWhiteSpace(responseRaw) ? "No body" : "OK"
+                    };
                 }
 
                 _logger.LogInformation("✅ {ResourceType}/{Operation} completed: {Code} - {Message}",
-                    resourceType, operation, deserialized?.Code, deserialized?.Message);
+                    resourceType, operation, parsed.Code, parsed.Message);
 
-                return deserialized;
+                return parsed;
             }
             catch (Exception ex)
             {
@@ -126,7 +169,20 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 throw;
             }
         }
+        static bool LooksLikeJson(string? mediaType, string body)
+        {
+            if (!string.IsNullOrEmpty(mediaType) && mediaType.Contains("json", StringComparison.OrdinalIgnoreCase))
+                return true;
+            var s = body.AsSpan().TrimStart();
+            return s.Length > 0 && (s[0] == '{' || s[0] == '[');
+        }
 
+        static string Trunc(string? s, int max)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            var flat = s.Replace("\r", " ").Replace("\n", " ");
+            return flat.Length <= max ? flat : flat[..max] + "…";
+        }
 
 
     }

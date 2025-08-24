@@ -37,7 +37,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
             if (string.IsNullOrWhiteSpace(clientId)) throw new ArgumentException("Client ID cannot be null or empty.", nameof(clientId));
 
             var bson = BsonDocument.Parse(request.FhirJson.ToJsonString());
-            var facilityId = await _clientConfig.GetFacilityIdAsync(clientId);
+            //var facilityId = await _clientConfig.GetFacilityIdAsync(clientId);
 
             var record = new PatientSyncRecord  // TODO: Dynamically resolve by resourceType
             {
@@ -52,13 +52,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
                 ApiResponsePayload = null, // Initially null, will be updated after sync
                 LastAttemptAt = null,
                 SyncedResourceId = null, // Initially null, will be updated after sync
-                FacilityId = facilityId
+                FacilityId = request.FacilityId
 
             };
 
             await _mongoSyncRepository.AddRecordAsync(record);
 
-            _logger.LogInformation("✅ Ingested {ResourceType} from {Source}", request.ResourceType, clientId);
+            _logger.LogInformation(" Ingested {ResourceType} from {Source}", request.ResourceType, clientId);
         }
     }
 
