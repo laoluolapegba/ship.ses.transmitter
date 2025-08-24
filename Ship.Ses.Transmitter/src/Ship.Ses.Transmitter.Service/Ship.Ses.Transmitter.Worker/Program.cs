@@ -85,25 +85,6 @@ builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
 });
 
 
-//var appSettings = builder.Configuration.GetSection(nameof(AppSettings)).Get<AppSettings>();
-//if (appSettings != null)
-//{
-
-//    var msSqlSettings = appSettings.ShipServerSqlDb;
-//    builder.Services.AddDbContext<ShipServerDbContext>(options =>
-//    {
-//        options.UseMySQL(msSqlSettings.ConnectionString);
-//    });
-
-//    builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
-//    {
-//        opts.UseMySQL(msSqlSettings.ConnectionString);
-//    });
-//}
-//else
-//{
-//    throw new Exception("AppSettings not found");
-//}
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
 
 
@@ -117,12 +98,11 @@ builder.Services
 
 //  Register Background Workers for Each FHIR Resource Type
 
-
 builder.Services.AddHostedService<PatientSyncWorker>();
 //builder.Services.AddHostedService<EncounterSyncWorker>();
-builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
 
-//builder.Services.AddHostedService<MetricsSyncReporterWorker>();
+//Register this guy to report/ update the emr staging db 
+builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
 
 
 //var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
