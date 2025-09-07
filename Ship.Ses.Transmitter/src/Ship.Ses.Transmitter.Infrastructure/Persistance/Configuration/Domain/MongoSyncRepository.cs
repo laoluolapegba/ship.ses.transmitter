@@ -2,6 +2,7 @@
 using MongoDB.Bson;
 using MongoDB.Driver;
 using Ship.Ses.Transmitter.Domain.Patients;
+using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using System;
 using System.Collections.Generic;
@@ -92,6 +93,112 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             await collection.BulkWriteAsync(models);
         }
 
-        
+        /// <summary>
+        /// Find the originating patient record by transaction id
+        /// </summary>
+        /// <param name="transactionId"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+
+        public async Task<PatientSyncRecord?> GetPatientByTransactionIdAsync(string transactionId, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<PatientSyncRecord>("transformed_pool_patients");
+            var filter = Builders<PatientSyncRecord>.Filter.Eq("syncedFhirResourceId", transactionId);
+            return await col.Find(filter).FirstOrDefaultAsync(ct);
+        }
+
+        /// <summary>
+        /// Fetch due events from patientstatusevents
+        /// </summary>
+        /// <param name="batchSize"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public async Task<List<StatusEvent>> FetchDueEmrCallbacksAsync(int batchSize, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var now = DateTime.UtcNow;
+
+            var filter = Builders<StatusEvent>.Filter.And(
+                Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Lte(x => x.CallbackNextAttemptAt, now)
+            );
+
+            return await col.Find(filter)
+                            .Sort(Builders<StatusEvent>.Sort.Ascending(x => x.CallbackNextAttemptAt))
+                            .Limit(batchSize)
+                            .ToListAsync(ct);
+        }
+
+        /// <summary>
+        /// Try to atomically mark as InFlight (claim)
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public async Task<bool> TryMarkInFlightAsync(ObjectId id, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var now = DateTime.UtcNow;
+
+            var filter = Builders<StatusEvent>.Filter.And(
+                Builders<StatusEvent>.Filter.Eq(x => x.Id, id),
+                Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "InFlight"),
+                Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Lte(x => x.CallbackNextAttemptAt, now)
+            );
+
+            var update = Builders<StatusEvent>.Update
+                .Set(x => x.CallbackStatus, "InFlight")
+                .Set(x => x.CallbackLastError, null);
+
+            var res = await col.UpdateOneAsync(filter, update, cancellationToken: ct);
+            return res.ModifiedCount == 1;
+        }
+
+        /// <summary>
+        /// Mark delivery success
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="statusCode"></param>
+        /// <param name="body"></param>
+        /// <param name="targetUrl"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public async Task MarkEmrCallbackSucceededAsync(ObjectId id, int statusCode, string? body, string? targetUrl, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var update = Builders<StatusEvent>.Update
+                .Set(x => x.CallbackStatus, "Succeeded")
+                .Set(x => x.CallbackDeliveredAt, DateTime.UtcNow)
+                .Set(x => x.EmrResponseStatusCode, statusCode)
+                .Set(x => x.EmrResponseBody, Truncate(body, 4000))
+                .Set(x => x.EmrTargetUrl, targetUrl);
+            await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
+        }
+
+        /// <summary>
+        /// Mark for retry with backoff
+        /// </summary>
+        /// <param name="id"></param>
+        /// <param name="error"></param>
+        /// <param name="delay"></param>
+        /// <param name="targetUrl"></param>
+        /// <param name="ct"></param>
+        /// <returns></returns>
+        public async Task MarkEmrCallbackRetryAsync(ObjectId id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var update = Builders<StatusEvent>.Update
+                .Inc(x => x.CallbackAttempts, 1)
+                .Set(x => x.CallbackStatus, "Pending")
+                .Set(x => x.CallbackLastError, Truncate(error, 2000))
+                .Set(x => x.CallbackNextAttemptAt, DateTime.UtcNow.Add(delay))
+                .Set(x => x.EmrTargetUrl, targetUrl);
+            await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
+        }
+
+        private static string? Truncate(string? s, int max) =>
+            string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
+
     }
 }

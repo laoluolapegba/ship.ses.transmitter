@@ -33,7 +33,12 @@ builder.Services
     .Validate(o => o.TimeoutSeconds > 0, "FhirApi:TimeoutSeconds must be > 0")
     .ValidateOnStart();
 
-//builder.Services.ConfigureTracing(builder.Configuration);
+builder.Services.AddHttpClient("EmrCallback")
+    .ConfigureHttpClient(c =>
+    {
+        c.Timeout = TimeSpan.FromSeconds(15);
+    });
+
 
 builder.Services
     .AddOptions<AppSettings>()
@@ -104,6 +109,7 @@ builder.Services.AddHostedService<PatientSyncWorker>();
 //Register this guy to report/ update the emr staging db 
 builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
 
+builder.Services.AddHostedService<EmrCallbackWorker>();
 
 //var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
 //Console.WriteLine(test == null

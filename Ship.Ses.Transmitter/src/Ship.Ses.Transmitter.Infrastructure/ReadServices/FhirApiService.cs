@@ -63,11 +63,19 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
 
             string endpoint = operation switch
             {
-                FhirOperation.Post => $"{_settings.BaseUrl}/api/v1/{resourceType}/Create",
-                FhirOperation.Put => $"{_settings.BaseUrl}/api/v1/{resourceType}/Update/{resourceId}",
-                FhirOperation.Delete => $"{_settings.BaseUrl}/api/v1/{resourceType}/Delete/{resourceId}",
-                FhirOperation.Get => $"{_settings.BaseUrl}/api/v1/{resourceType}/Get/{resourceId}",
+                FhirOperation.Post => $"{_settings.BaseUrl}/api/v1/{resourceType}",
+                FhirOperation.Put => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
+                FhirOperation.Delete => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
+                FhirOperation.Get => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
                 _ => throw new InvalidOperationException("Unknown FHIR operation")
+
+
+                //FhirOperation.Post => $"{_settings.BaseUrl}/api/v1/{resourceType}/Create",
+                //FhirOperation.Put => $"{_settings.BaseUrl}/api/v1/{resourceType}/Update/{resourceId}",
+                //FhirOperation.Delete => $"{_settings.BaseUrl}/api/v1/{resourceType}/Delete/{resourceId}",
+                //FhirOperation.Get => $"{_settings.BaseUrl}/api/v1/{resourceType}/Get/{resourceId}",
+                //_ => throw new InvalidOperationException("Unknown FHIR operation")
+
             };
 
             var request = new HttpRequestMessage(method, endpoint);

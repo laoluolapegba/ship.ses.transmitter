@@ -62,5 +62,7 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         [BsonRepresentation(BsonType.Int64)]
         public long? StagingId { get; set; }
 
+        [BsonElement("clientEMRCallbackUrl")]
+        public string? ClientEMRCallbackUrl { get; set; }
     }
 }

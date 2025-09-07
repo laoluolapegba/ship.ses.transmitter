@@ -1,4 +1,5 @@
 ﻿using MongoDB.Bson;
+using Ship.Ses.Transmitter.Domain.Sync;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,5 +19,13 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         Task BulkUpdateStatusAsync<T>(
     Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)> updates
 ) where T : FhirSyncRecord, new();
+
+        Task<PatientSyncRecord?> GetPatientByTransactionIdAsync(string transactionId, CancellationToken ct = default);
+        Task<List<StatusEvent>> FetchDueEmrCallbacksAsync(int batchSize, CancellationToken ct = default);
+        Task MarkEmrCallbackSucceededAsync(ObjectId id, int statusCode, string? body, string? targetUrl, CancellationToken ct = default);
+        Task MarkEmrCallbackRetryAsync(ObjectId id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default);
+        Task<bool> TryMarkInFlightAsync(ObjectId id, CancellationToken ct = default);
+
     }
+
 }
