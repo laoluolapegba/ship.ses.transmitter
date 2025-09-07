@@ -32,7 +32,11 @@ namespace Ship.Ses.Transmitter.Worker
         {
             _sp = sp ?? throw new ArgumentNullException(nameof(sp));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-            _clientId = clientOptions?.Value.ClientId ?? throw new ArgumentNullException(nameof(clientOptions));
+            var opts = clientOptions?.Value ?? throw new ArgumentNullException(nameof(clientOptions));
+            _clientId = opts.ClientId;
+
+            _logger.LogInformation("PatientSyncWorker starting with mode: {Mode}",
+        opts.UseShipAdminApi ? "AdminAPI" : "DirectDB");
 
         }
 

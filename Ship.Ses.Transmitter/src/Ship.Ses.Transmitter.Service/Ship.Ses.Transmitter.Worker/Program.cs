@@ -2,10 +2,19 @@
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using MongoDB.Driver;
 using Serilog;
 using Ship.Ses.Transmitter.Application.Interfaces;
+using Ship.Ses.Transmitter.Application.Sync;
+using Ship.Ses.Transmitter.Infrastructure.AdminApi;
+using Ship.Ses.Transmitter.Infrastructure.Configuration;
+using Ship.Ses.Transmitter.Infrastructure.Http;
 using Ship.Ses.Transmitter.Infrastructure.Installers;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
+using Ship.Ses.Transmitter.Infrastructure.Persistance.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Security;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Worker;
 using static Org.BouncyCastle.Math.EC.ECCurve;
@@ -51,6 +60,52 @@ builder.Services
         !string.IsNullOrWhiteSpace(o.EmrDb.DbType),
         "Both ShipServerSqlDb and EmrDb must be configured")
     .ValidateOnStart();
+
+builder.Services.Configure<SeSClientOptions>(builder.Configuration.GetSection("SeSClient"));
+builder.Services.Configure<ShipAdminApiOptions>(builder.Configuration.GetSection("ShipAdminApi"));
+builder.Services.Configure<ShipAdminAuthOptions>(builder.Configuration.GetSection("ShipAdminAuth"));
+
+var seSClientOpts = builder.Configuration.GetSection("SeSClient").Get<SeSClientOptions>() ?? new SeSClientOptions();
+if (seSClientOpts.UseShipAdminApi)
+{
+
+    // ---- Admin API path ----
+    builder.Services.AddHttpClient("ShipAdminApi", (sp, client) =>
+    {
+        var o = sp.GetRequiredService<IOptions<ShipAdminApiOptions>>().Value;
+        client.BaseAddress = new Uri(o.BaseUrl);
+        client.Timeout = TimeSpan.FromSeconds(o.RequestTimeoutSeconds);
+    })
+    .AddPolicyHandler((IServiceProvider sp, HttpRequestMessage _req) =>
+    {
+        var o = sp.GetRequiredService<IOptions<ShipAdminApiOptions>>().Value;
+        return PollyPolicies.CreateStandardRetry(o);
+    });
+
+    builder.Services.AddSingleton<IClientSyncConfigProvider, HttpClientSyncConfigProvider>();
+    builder.Services.AddSingleton<ISyncMetricsWriter, HttpSyncMetricsWriter>();
+
+    // IMPORTANT: Do NOT register ShipServerDbContext here if it was only used for admin reads/writes
+    // (Keep any other DB contexts that are used elsewhere)
+    Log.Information("FeatureFlag: Using SHIP Admin API adapters (HTTP).");
+}
+else
+{
+    // Register DbContext
+   
+    builder.Services.AddDbContext<ShipServerDbContext>(opts =>
+    {
+        var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
+        UseProviderWithSchema(opts, app.ShipServerSqlDb);
+    });
+
+
+    // Register  EF-based adapters
+    builder.Services.AddScoped<IClientSyncConfigProvider, EfClientSyncConfigProvider>();
+    builder.Services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
+
+    Log.Information("FeatureFlag: Using direct DB adapters (EF/MySQL).");
+}
 static void UseProviderWithSchema(DbContextOptionsBuilder opts, DatabaseSettings db)
 {
     var kind = db.DbType.Trim().ToLowerInvariant();
@@ -77,12 +132,6 @@ static void UseProviderWithSchema(DbContextOptionsBuilder opts, DatabaseSettings
     }
 }
 
-builder.Services.AddDbContext<ShipServerDbContext>(opts =>
-{
-    var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
-    UseProviderWithSchema(opts, app.ShipServerSqlDb);
-});
-
 builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
 {
     var app = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
@@ -91,6 +140,7 @@ builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
 
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
+
 
 
 
