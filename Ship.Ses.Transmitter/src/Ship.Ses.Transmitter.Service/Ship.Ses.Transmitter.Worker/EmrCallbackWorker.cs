@@ -14,17 +14,17 @@ namespace Ship.Ses.Transmitter.Worker
     public sealed class EmrCallbackWorker : BackgroundService
     {
         private readonly ILogger<EmrCallbackWorker> _logger;
-        private readonly IMongoSyncRepository _mongo;
         private readonly IHttpClientFactory _httpClientFactory;
+        private readonly IServiceScopeFactory _scopeFactory;
 
         public EmrCallbackWorker(
             ILogger<EmrCallbackWorker> logger,
-            IMongoSyncRepository mongo,
-            IHttpClientFactory httpClientFactory)
+            IHttpClientFactory httpClientFactory,
+            IServiceScopeFactory scopeFactory)
         {
             _logger = logger;
-            _mongo = mongo;
             _httpClientFactory = httpClientFactory;
+            _scopeFactory = scopeFactory;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -35,56 +35,26 @@ namespace Ship.Ses.Transmitter.Worker
             {
                 try
                 {
-                    var due = await _mongo.FetchDueEmrCallbacksAsync(batchSize: 50, stoppingToken);
+                    using var scope = _scopeFactory.CreateScope();
+                    var repo = scope.ServiceProvider.GetRequiredService<IMongoSyncRepository>();
+
+                    // Fetch due jobs
+                    var due = await repo.FetchDueEmrCallbacksAsync(batchSize: 50, stoppingToken);
 
                     foreach (var evt in due)
                     {
-                        if (!await _mongo.TryMarkInFlightAsync(evt.Id, stoppingToken))
-                            continue; // claimed by another instance
+                        if (!await repo.TryMarkInFlightAsync(evt.Id, stoppingToken))
+                            continue;
 
-                        var targetUrl = await ResolveTargetUrlAsync(evt, stoppingToken);
+                        var targetUrl = await ResolveTargetUrlAsync(repo, evt, stoppingToken);
                         if (string.IsNullOrWhiteSpace(targetUrl))
                         {
-                            await _mongo.MarkEmrCallbackRetryAsync(evt.Id, "Missing EMR callback URL", TimeSpan.FromMinutes(10), null, stoppingToken);
+                            await repo.MarkEmrCallbackRetryAsync(evt.Id, "Missing EMR callback URL",
+                                delay: TimeSpan.FromMinutes(10), targetUrl: null, stoppingToken);
                             continue;
                         }
 
-                        var payload = BuildEmrPayload(evt); // same shape you received from SHIP
-                        var json = payload.ToJsonString(new System.Text.Json.JsonSerializerOptions
-                        {
-                            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                            WriteIndented = false
-                        });
-
-                        try
-                        {
-                            var client = _httpClientFactory.CreateClient("EmrCallback");
-                            using var req = new HttpRequestMessage(HttpMethod.Post, targetUrl)
-                            {
-                                Content = new StringContent(json, Encoding.UTF8, "application/json")
-                            };
-
-                            // Optional: add auth headers, correlation id, signatures here
-
-                            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, stoppingToken);
-                            var body = await resp.Content.ReadAsStringAsync(stoppingToken);
-
-                            if ((int)resp.StatusCode >= 200 && (int)resp.StatusCode < 300)
-                            {
-                                await _mongo.MarkEmrCallbackSucceededAsync(evt.Id, (int)resp.StatusCode, body, targetUrl, stoppingToken);
-                                _logger.LogInformation("✅ EMR callback delivered (tx={Tx})", evt.TransactionId);
-                            }
-                            else
-                            {
-                                await _mongo.MarkEmrCallbackRetryAsync(evt.Id, $"HTTP {(int)resp.StatusCode}: {Trim(body)}", Backoff(evt.CallbackAttempts), targetUrl, stoppingToken);
-                                _logger.LogWarning("⚠️ EMR callback failed HTTP {(Code)} (tx={Tx})", (int)resp.StatusCode, evt.TransactionId);
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            await _mongo.MarkEmrCallbackRetryAsync(evt.Id, ex.Message, Backoff(evt.CallbackAttempts), targetUrl, stoppingToken);
-                            _logger.LogError(ex, "❌ EMR callback exception (tx={Tx})", evt.TransactionId);
-                        }
+                        await SendToEmrAsync(repo, evt, targetUrl, stoppingToken);
                     }
                 }
                 catch (Exception ex)
@@ -94,15 +64,56 @@ namespace Ship.Ses.Transmitter.Worker
 
                 await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
             }
+
+            _logger.LogInformation("🛑 EMR Callback Worker stopped.");
         }
 
-        private async Task<string?> ResolveTargetUrlAsync(StatusEvent evt, CancellationToken ct)
+        private async Task<string?> ResolveTargetUrlAsync(IMongoSyncRepository repo, StatusEvent evt, CancellationToken ct)
         {
-            if (!string.IsNullOrEmpty(evt.EmrTargetUrl)) return evt.EmrTargetUrl;
+            if (!string.IsNullOrEmpty(evt.EmrTargetUrl))
+                return evt.EmrTargetUrl;
 
-            // Find patient record by transaction id (stored as SyncedResourceId)
-            var patient = await _mongo.GetPatientByTransactionIdAsync(evt.TransactionId, ct);
+            var patient = await repo.GetPatientByTransactionIdAsync(evt.TransactionId, ct);
             return patient?.ClientEMRCallbackUrl;
+        }
+
+        private async Task SendToEmrAsync(IMongoSyncRepository repo, StatusEvent evt, string targetUrl, CancellationToken ct)
+        {
+            var client = _httpClientFactory.CreateClient("EmrCallback");
+            var payload = BuildEmrPayload(evt);
+            var json = payload.ToJsonString(new System.Text.Json.JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            });
+
+            try
+            {
+                using var req = new HttpRequestMessage(HttpMethod.Post, targetUrl)
+                {
+                    Content = new StringContent(json, Encoding.UTF8, "application/json")
+                };
+
+                using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
+                var body = await resp.Content.ReadAsStringAsync(ct);
+
+                if ((int)resp.StatusCode is >= 200 and < 300)
+                {
+                    await repo.MarkEmrCallbackSucceededAsync(evt.Id, (int)resp.StatusCode, body, targetUrl, ct);
+                    _logger.LogInformation("✅ EMR callback delivered (tx={Tx})", evt.TransactionId);
+                }
+                else
+                {
+                    await repo.MarkEmrCallbackRetryAsync(evt.Id, $"HTTP {(int)resp.StatusCode}: {Trim(body)}",
+                        delay: Backoff(evt.CallbackAttempts), targetUrl, ct);
+                    _logger.LogWarning("⚠️ EMR callback failed HTTP {Code} (tx={Tx})", (int)resp.StatusCode, evt.TransactionId);
+                }
+            }
+            catch (Exception ex)
+            {
+                await repo.MarkEmrCallbackRetryAsync(evt.Id, ex.Message, Backoff(evt.CallbackAttempts), targetUrl, ct);
+                _logger.LogError(ex, "❌ EMR callback exception (tx={Tx})", evt.TransactionId);
+            }
         }
 
         private static JsonObject BuildEmrPayload(StatusEvent evt)
@@ -116,8 +127,8 @@ namespace Ship.Ses.Transmitter.Worker
             };
             if (evt.Data != null)
             {
-                // convert BsonDocument to JsonObject
-                var json = evt.Data.ToJson(new MongoDB.Bson.IO.JsonWriterSettings { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
+                var json = evt.Data.ToJson(new MongoDB.Bson.IO.JsonWriterSettings
+                { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
                 obj["data"] = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
             }
             return obj;
@@ -126,11 +137,13 @@ namespace Ship.Ses.Transmitter.Worker
         private static TimeSpan Backoff(int attempts)
         {
             var n = Math.Clamp(attempts, 0, 10);
-            var seconds = Math.Min(60 * 60, (int)Math.Pow(2, n)); // cap at 1h
-            return TimeSpan.FromSeconds(Math.Max(30, seconds));   // min 30s
+            var seconds = Math.Min(3600, (int)Math.Pow(2, n)); // cap 1h
+            return TimeSpan.FromSeconds(Math.Max(30, seconds)); // min 30s
         }
 
-        private static string Trim(string? s) => string.IsNullOrEmpty(s) ? "" : (s.Length <= 500 ? s : s[..500]);
+        private static string Trim(string? s) =>
+            string.IsNullOrEmpty(s) ? "" : (s.Length <= 500 ? s : s[..500]);
     }
+
 
 }

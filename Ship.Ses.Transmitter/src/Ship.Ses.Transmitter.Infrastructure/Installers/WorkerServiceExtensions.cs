@@ -33,6 +33,7 @@ using Microsoft.EntityFrameworkCore;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.Sync;
 using Ship.Ses.Transmitter.Application.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Security;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Installers
 {
@@ -74,6 +75,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
             services.AddHttpClient<TokenService>();
             services.AddSingleton<TokenService>();
+            services.AddSingleton<AdminTokenService>();
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 
