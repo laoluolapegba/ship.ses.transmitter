@@ -84,6 +84,8 @@ if (seSClientOpts.UseShipAdminApi)
 
     builder.Services.AddSingleton<IClientSyncConfigProvider, HttpClientSyncConfigProvider>();
     builder.Services.AddSingleton<ISyncMetricsWriter, HttpSyncMetricsWriter>();
+    builder.Services.AddSingleton<IHeartbeatClient, HttpHeartbeatClient>();
+    
 
     // IMPORTANT: Do NOT register ShipServerDbContext here if it was only used for admin reads/writes
     // (Keep any other DB contexts that are used elsewhere)
@@ -106,6 +108,7 @@ else
 
     Log.Information("FeatureFlag: Using direct DB adapters (EF/MySQL).");
 }
+
 static void UseProviderWithSchema(DbContextOptionsBuilder opts, DatabaseSettings db)
 {
     var kind = db.DbType.Trim().ToLowerInvariant();
@@ -138,12 +141,10 @@ builder.Services.AddPooledDbContextFactory<ExtractorStagingDbContext>(opts =>
     UseProviderWithSchema(opts, app.EmrDb);
 });
 
+//Register this guy to report/ update the emr staging db 
+builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection(nameof(AppSettings)));
-
-
-
-
 
 builder.Services.AddAppServices(builder.Configuration);
 
@@ -154,17 +155,15 @@ builder.Services
 //  Register Background Workers for Each FHIR Resource Type
 
 builder.Services.AddHostedService<PatientSyncWorker>();
+builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 //builder.Services.AddHostedService<EncounterSyncWorker>();
-
-//Register this guy to report/ update the emr staging db 
-builder.Services.AddScoped<IStagingUpdateWriter, StagingUpdateWriter>();
-
 builder.Services.AddHostedService<EmrCallbackWorker>();
+builder.Services.AddHostedService<ClientHeartbeatWorker>();
 
-//var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
-//Console.WriteLine(test == null
-//    ? "❌ ISyncMetricsCollector not registered"
-//    : "✅ ISyncMetricsCollector is registered");
+var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
+Console.WriteLine(test == null
+    ? "❌ ISyncMetricsCollector not registered"
+    : "✅ ISyncMetricsCollector is registered");
 
 var app = builder.Build();
 

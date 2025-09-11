@@ -13,8 +13,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using static Ship.Ses.Transmitter.Infrastructure.Configuration.ShipAdminApiOptions;
 
 namespace Ship.Ses.Transmitter.Worker
 {
@@ -24,17 +26,20 @@ namespace Ship.Ses.Transmitter.Worker
         private readonly ILogger<PatientSyncWorker> _logger;
         //private readonly IClientSyncConfigProvider _configProvider;
         private readonly string _clientId;
-
+        private readonly HeartbeatOptions _hbOpts;
+        private readonly IHeartbeatSender _heartbeat;
         public PatientSyncWorker(
             IServiceProvider sp,
             IOptions<SeSClientOptions> clientOptions,
-            ILogger<PatientSyncWorker> logger)
+            ILogger<PatientSyncWorker> logger,
+
+        IOptions<HeartbeatOptions> hbOpts)
         {
             _sp = sp ?? throw new ArgumentNullException(nameof(sp));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             var opts = clientOptions?.Value ?? throw new ArgumentNullException(nameof(clientOptions));
             _clientId = opts.ClientId;
-
+            _hbOpts = hbOpts?.Value ?? throw new ArgumentNullException(nameof(hbOpts));
             _logger.LogInformation("PatientSyncWorker starting with mode: {Mode}",
         opts.UseShipAdminApi ? "AdminAPI" : "DirectDB");
 
@@ -42,105 +47,106 @@ namespace Ship.Ses.Transmitter.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("Starting Patient Sync Worker...");
+            _logger.LogInformation("Starting Patient Sync Worker...");           
 
-            while (!stoppingToken.IsCancellationRequested)
+            try
             {
-                _logger.LogInformation("PatientSyncWorker: Beginning sync loop");
-
-                using var scope = _sp.CreateScope();
-                var configProvider = scope.ServiceProvider.GetRequiredService<IClientSyncConfigProvider>();
-                var writer = scope.ServiceProvider.GetRequiredService<ISyncMetricsWriter>();
-                var syncService = scope.ServiceProvider.GetRequiredService<IFhirSyncService>();
-
-                // ✅ If deactivated/disabled, PAUSE and poll instead of breaking the loop
-                if (!await configProvider.IsClientActiveAsync(_clientId))
+                while (!stoppingToken.IsCancellationRequested)
                 {
-                    _logger.LogWarning("⛔ Client {ClientId} not active. Pausing and polling…", _clientId);
-                    await writer.WriteStatusAsync(BuildStatus("Paused", lastError: "Deactivated at server"));
-                    await WaitUntilEnabledAsync(stoppingToken);
-                    continue; // try again
-                }
+                    _logger.LogInformation("PatientSyncWorker: Beginning sync loop");
 
-                var enabledResources = await configProvider.GetEnabledResourcesAsync(_clientId);
-                if (!enabledResources.Contains("Patient", StringComparer.OrdinalIgnoreCase))
-                {
-                    _logger.LogInformation("⏸️ Patient sync disabled for {ClientId}. Pausing and polling…", _clientId);
-                    await writer.WriteStatusAsync(BuildStatus("Paused", lastError: "Patient sync disabled at server"));
-                    await WaitUntilEnabledAsync(stoppingToken);
-                    continue;
-                }
+                    using var scope = _sp.CreateScope();
+                    var configProvider = scope.ServiceProvider.GetRequiredService<IClientSyncConfigProvider>();
+                    var writer = scope.ServiceProvider.GetRequiredService<ISyncMetricsWriter>();
+                    var syncService = scope.ServiceProvider.GetRequiredService<IFhirSyncService>();
 
-                // Mark as running
-                try
-                {
-                    await writer.WriteStatusAsync(BuildStatus("Running"));
-                    _logger.LogInformation("Sync status set to Running for {ClientId}", _clientId);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "❌ Failed to write Running status");
-                }
-
-                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-                var linkedToken = linkedCts.Token;
-
-                var deactivatedByServer = false;
-                var monitorTask = MonitorDeactivationAsync(_clientId, linkedCts, () => deactivatedByServer = true, stoppingToken);
-
-                try
-                {
-                    var correlationId = Guid.NewGuid().ToString();
-                    using (Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId))
+                    if (!await configProvider.IsClientActiveAsync(_clientId))
                     {
-                        var result = await syncService.ProcessPendingRecordsAsync<PatientSyncRecord>(linkedToken);
-
-                        _logger.LogInformation("Synced Patient records: Total={Total}, Synced={Synced}, Failed={Failed}",
-                            result.Total, result.Synced, result.Failed);
+                        _logger.LogWarning("⛔ Client {ClientId} not active. Pausing and polling…", _clientId);
+                        await writer.WriteStatusAsync(BuildStatus("Stopped", lastError: "Deactivated at server"));
+                        await WaitUntilEnabledAsync(stoppingToken);
+                        continue;
                     }
-                }
-                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
-                {
-                    _logger.LogInformation("🛑 Host stop signal received. Stopping worker {ClientId}.", _clientId);
-                    await writer.WriteStatusAsync(BuildStatus("Stopped", lastError: "Host stop signal"));
-                    break; // only break for host shutdown
-                }
-                catch (OperationCanceledException)
-                {
-                    // 🔁 Server flipped to inactive mid-run: pause & poll, then continue
-                    var reason = deactivatedByServer ? "Deactivated at server (mid-run)" : "Operation canceled";
-                    _logger.LogWarning("🛑 Cancellation during processing for {ClientId}. {Reason}", _clientId, reason);
-                    await writer.WriteStatusAsync(BuildStatus("Paused", lastError: reason));
 
-                    // Wait until active/enabled again, then loop
-                    await WaitUntilEnabledAsync(stoppingToken);
-                    continue;
-                }
-                catch (Exception ex)
-                {
-                    // Don’t kill the worker; log, mark error, backoff, then continue
-                    _logger.LogError(ex, "❌ Unhandled exception in PatientSyncWorker. Backing off…");
-                    await writer.WriteStatusAsync(BuildStatus("Error", lastError: ex.Message));
+                    var enabledResources = await configProvider.GetEnabledResourcesAsync(_clientId);
+                    if (!enabledResources.Contains("Patient", StringComparer.OrdinalIgnoreCase))
+                    {
+                        _logger.LogInformation("⏸️ Patient sync disabled for {ClientId}. Pausing and polling…", _clientId);
+                        await writer.WriteStatusAsync(BuildStatus("Stopped", lastError: "Patient sync disabled at server"));
+                        await WaitUntilEnabledAsync(stoppingToken);
+                        continue;
+                    }
 
-                    await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
-                    continue;
-                }
-                finally
-                {
                     try
                     {
-                        linkedCts.Cancel();
-                        await monitorTask;
+                        await writer.WriteStatusAsync(BuildStatus("Running"));
+                        _logger.LogInformation("Sync status set to Running for {ClientId}", _clientId);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "❌ Failed to write Running status");
+                    }
+
+                    using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
+                    var linkedToken = linkedCts.Token;
+
+                    var deactivatedByServer = false;
+                    var monitorTask = MonitorDeactivationAsync(_clientId, linkedCts, () => deactivatedByServer = true, stoppingToken);
+
+                    try
+                    {
+                        var correlationId = Guid.NewGuid().ToString();
+                        using (Serilog.Context.LogContext.PushProperty("CorrelationId", correlationId))
+                        {
+                            _logger.LogInformation("Getting Pending records for {ClientId} ...", _clientId);
+                            var result = await syncService.ProcessPendingRecordsAsync<PatientSyncRecord>(linkedToken);
+
+                            _logger.LogInformation("Synced Patient records: Total={Total}, Synced={Synced}, Failed={Failed}",
+                                result.Total, result.Synced, result.Failed);
+                        }
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        _logger.LogInformation("🛑 Host stop signal received. Stopping worker {ClientId}.", _clientId);
+                        var writer2 = scope.ServiceProvider.GetRequiredService<ISyncMetricsWriter>();
+                        await writer2.WriteStatusAsync(BuildStatus("Stopped", lastError: "Host stop signal"));
+                        break;
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        var reason = deactivatedByServer ? "Deactivated at server (mid-run)" : "Operation canceled";
+                        _logger.LogWarning("🛑 Cancellation during processing for {ClientId}. {Reason}", _clientId, reason);
+                        var writer2 = scope.ServiceProvider.GetRequiredService<ISyncMetricsWriter>();
+                        await writer2.WriteStatusAsync(BuildStatus("Stopped", lastError: reason));
+
+                        await WaitUntilEnabledAsync(stoppingToken);
+                        continue;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "❌ Unhandled exception in PatientSyncWorker. Backing off…");
+                        var writer2 = scope.ServiceProvider.GetRequiredService<ISyncMetricsWriter>();
+                        await writer2.WriteStatusAsync(BuildStatus("Error", lastError: ex.Message));
+
+                        await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
+                        continue;
+                    }
+                    finally
+                    {
+                        try { linkedCts.Cancel(); await monitorTask; } catch { /* ignore */ }
+                    }
+
+                    await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
                 }
-
-                // Idle pause between cycles
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
             }
-
-            _logger.LogInformation("🛑 Patient Sync Worker stopped.");
+            finally
+            {
+                
+                _logger.LogInformation("🛑 Patient Sync Worker stopped.");
+            }
         }
+
+        
 
         // ⏸️ Poll until the server says this client is active AND Patient is enabled
         private async Task WaitUntilEnabledAsync(CancellationToken stoppingToken)
@@ -164,6 +170,19 @@ namespace Ship.Ses.Transmitter.Worker
 
         private SyncClientStatus BuildStatus(string status, string? lastError = null)
         {
+            _logger.LogWarning("Build status.. {ClientId} ...", _clientId);
+
+            // Get a unique batch ID if needed
+            var batchId = status == "Running" ?
+                $"batch-{DateTime.UtcNow:yyyy-MM-dd-HH-mm-ss}" :
+                "-";
+
+            // Generate a cryptographic hash for the signature
+            var dataToHash = $"{_clientId}-{DateTime.UtcNow:O}-{status}";
+            using var sha256 = SHA256.Create();
+            var hashBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(dataToHash));
+            var signatureHash = BitConverter.ToString(hashBytes).Replace("-", "").ToLowerInvariant();
+
             return new SyncClientStatus
             {
                 ClientId = _clientId,
@@ -172,12 +191,12 @@ namespace Ship.Ses.Transmitter.Worker
                 LastSyncedAt = DateTime.UtcNow,
                 TotalSynced = 0,
                 TotalFailed = 0,
-                CurrentBatchId = "-",
+                CurrentBatchId = batchId,
                 LastError = lastError,
                 IpAddress = GetLocalIpAddress(),
                 Hostname = Dns.GetHostName(),
                 Version = "1.0.0",
-                SignatureHash = Guid.NewGuid().ToString(),
+                SignatureHash = signatureHash, // Corrected to be a cryptographic hash
                 UpdatedAt = DateTime.UtcNow
             };
         }

@@ -37,7 +37,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             _http = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
         }
 
-        public async Task<string> GetAccessTokenAsync(CancellationToken ct = default)
+        public async Task<string> GetAccessTokenAsync(CancellationToken ct = default) 
         {
             // Return cached token if still valid
             lock (_gate)
@@ -62,7 +62,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
             _log.LogInformation("🔐 Requesting Admin API token: endpoint={Endpoint}, clientId={ClientId}",
-                _opts.TokenUrl, _opts.ClientId);  //Mask(_opts.ClientId)
+                _opts.TokenUrl, Mask(_opts.ClientId));  //
 
             using var resp = await _http.SendAsync(req, ct);
             var body = await resp.Content.ReadAsStringAsync(ct);

@@ -43,15 +43,24 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
         public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new()
         {
-            //var records = await _repository.GetPendingRecordsAsync<T>();
-
             var result = new SyncResultDto();
 
-            var records = await _repository.GetByStatusAsync<T>("Pending");
-            result.Total = records.Count();
+            // Avoid double-enumeration and DB re-query; materialize once.
+            var records = (await _repository.GetByStatusAsync<T>("Pending")).ToList();
+            result.Total = records.Count;
 
-            var successIds = new List<string>();
-            var failedIds = new List<string>();
+            // 🔎 Tell the log whether we found anything (and how many)
+            _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", typeof(T).Name, result.Total);
+
+            if (result.Total == 0)
+            {
+                _logger.LogInformation("✅ No pending {ResourceType} records. Nothing to sync.", typeof(T).Name);
+                return result; // early exit
+            }
+
+            // Optional: show sample IDs at Debug
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Pending {ResourceType} sample IDs: {Ids}", typeof(T).Name, records.Take(5).Select(r => r.ResourceId).ToArray());
 
             var successUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
             var failedUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
@@ -70,16 +79,18 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
                     var apiResponse = await _fhirApiService.SendAsync(
-                    FhirOperation.Post,
-                    record.ResourceType,
-                    record.ResourceId,
-                    record.FhirJson.ToCleanJson(),
-                    callbackUrl,
-                    token);
+                        FhirOperation.Post,
+                        record.ResourceType,
+                        record.ResourceId,
+                        record.FhirJson.ToCleanJson(),
+                        callbackUrl,
+                        token);
 
+                    var accepted = apiResponse != null
+                        && apiResponse.Status?.Equals("success", StringComparison.OrdinalIgnoreCase) == true
+                        && apiResponse.Code == 202;
 
-                    //  Interpret the FHIR API response
-                    if (apiResponse != null && apiResponse.Status?.ToLower() == "success" && apiResponse.Code == 202)
+                    if (accepted)
                     {
                         successUpdates.Add(ObjectId.Parse(record.Id), (
                             status: "Synced",
@@ -87,7 +98,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             transactionId: apiResponse?.transactionId ?? string.Empty,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogInformation("Sync success for {Id}", record.ResourceId);
+                        _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
+
+                        if (record.StagingId.HasValue)
+                            marksToSubmit.Add(new StagingTransmissionMark(record.StagingId.Value, apiResponse!.transactionId, DateTime.UtcNow));
                     }
                     else
                     {
@@ -98,26 +112,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
                         _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.ResourceId, apiResponse?.Message);
-                    }
 
-
-                    var accepted = apiResponse != null
-                       && apiResponse.Status?.Equals("success", StringComparison.OrdinalIgnoreCase) == true
-                       && apiResponse.Code == 202;
-
-                    if (record.StagingId.HasValue)
-                    {
-                        if (accepted)
-                        {
-                            marksToSubmit.Add(new StagingTransmissionMark(
-                                record.StagingId.Value,
-                                apiResponse.transactionId,
-                                DateTime.UtcNow));
-                        }
-                        else
-                        {
+                        if (record.StagingId.HasValue)
                             marksToFail.Add(record.StagingId.Value);
-                        }
                     }
                 }
                 catch (Exception ex)
@@ -127,18 +124,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         message: ex.Message,
                         transactionId: null,
                         rawResponse: System.Text.Json.JsonSerializer.Serialize(new { Error = ex.Message, StackTrace = ex.StackTrace })
-
                     ));
+
                     if (record.StagingId.HasValue)
                         marksToFail.Add(record.StagingId.Value);
 
                     _logger.LogError(ex, "❌ Sync failed for {Id}: {Message}", record.ResourceId, ex.Message);
                 }
-
-                
             }
 
-            // Persist results to Mongo
+            // Persist results
             if (successUpdates.Any())
                 await _repository.BulkUpdateStatusAsync<T>(successUpdates);
 
@@ -151,20 +146,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             await _stagingUpdateWriter.BulkMarkSubmittedAsync(marksToSubmit, token);
             await _stagingUpdateWriter.BulkMarkFailedAsync(marksToFail, token);
+
+            // 📊 Summary (you also log from the worker, but this helps if the caller changes later)
+            _logger.LogInformation("📊 Sync result for {ResourceType}: Total={Total}, Synced={Synced}, Failed={Failed}",
+                typeof(T).Name, result.Total, result.Synced, result.Failed);
+
             return result;
-
-            //if (successIds.Any())
-            //{
-            //    var objectIds = successIds.Select(id => ObjectId.Parse(id)).ToList();
-            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Synced");
-            //}
-
-            //if (failedIds.Any())
-            //{
-            //    var objectIds = failedIds.Select(id => ObjectId.Parse(id)).ToList();
-            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
-            //}
         }
+
         private static string BuildCallbackUrl(string template, FhirSyncRecord record)
         {
             if (string.IsNullOrWhiteSpace(template)) return null;
