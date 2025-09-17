@@ -87,6 +87,15 @@ namespace Ship.Ses.Transmitter.Worker
                 WriteIndented = false
             });
 
+            // ── Logging (what we're sending)
+            _logger.LogInformation(
+                "➡️ Sending EMR callback to {Url} (tx={Tx}, corr={Corr}, status={Status})",
+                SafeUrl(targetUrl), evt.TransactionId, evt.CorrelationId, evt.Status);
+
+            _logger.LogDebug(
+                "EMR callback payload (tx={Tx}, corr={Corr}): {Payload}",
+                evt.TransactionId, evt.CorrelationId, Trim(json, 2000)); // cap to 2KB
+
             try
             {
                 using var req = new HttpRequestMessage(HttpMethod.Post, targetUrl)
@@ -94,27 +103,61 @@ namespace Ship.Ses.Transmitter.Worker
                     Content = new StringContent(json, Encoding.UTF8, "application/json")
                 };
 
+                //  correlation headers for the EMR
+                req.Headers.TryAddWithoutValidation("x-transaction-id", evt.TransactionId);
+                if (!string.IsNullOrWhiteSpace(evt.CorrelationId))
+                    req.Headers.TryAddWithoutValidation("x-correlation-id", evt.CorrelationId);
+                if (!string.IsNullOrWhiteSpace(evt.ResourceType))
+                    req.Headers.TryAddWithoutValidation("x-fhir-resource-type", evt.ResourceType);
+                if (!string.IsNullOrWhiteSpace(evt.ResourceId))
+                    req.Headers.TryAddWithoutValidation("x-fhir-resource-id", evt.ResourceId);
+
                 using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ct);
                 var body = await resp.Content.ReadAsStringAsync(ct);
 
                 if ((int)resp.StatusCode is >= 200 and < 300)
                 {
                     await repo.MarkEmrCallbackSucceededAsync(evt.Id, (int)resp.StatusCode, body, targetUrl, ct);
-                    _logger.LogInformation("✅ EMR callback delivered (tx={Tx})", evt.TransactionId);
+                    _logger.LogInformation("✅ EMR callback delivered (tx={Tx}, corr={Corr})", evt.TransactionId, evt.CorrelationId);
                 }
                 else
                 {
-                    await repo.MarkEmrCallbackRetryAsync(evt.Id, $"HTTP {(int)resp.StatusCode}: {Trim(body)}",
-                        delay: Backoff(evt.CallbackAttempts), targetUrl, ct);
-                    _logger.LogWarning("⚠️ EMR callback failed HTTP {Code} (tx={Tx})", (int)resp.StatusCode, evt.TransactionId);
+                    await repo.MarkEmrCallbackRetryAsync(
+                        evt.Id,
+                        $"HTTP {(int)resp.StatusCode}: {Trim(body)}",
+                        delay: Backoff(evt.CallbackAttempts),
+                        targetUrl,
+                        ct);
+
+                    _logger.LogWarning(
+                        "⚠️ EMR callback failed HTTP {Code} (tx={Tx}, corr={Corr})",
+                        (int)resp.StatusCode, evt.TransactionId, evt.CorrelationId);
                 }
             }
             catch (Exception ex)
             {
                 await repo.MarkEmrCallbackRetryAsync(evt.Id, ex.Message, Backoff(evt.CallbackAttempts), targetUrl, ct);
-                _logger.LogError(ex, "❌ EMR callback exception (tx={Tx})", evt.TransactionId);
+                _logger.LogError(ex, "❌ EMR callback exception (tx={Tx}, corr={Corr})", evt.TransactionId, evt.CorrelationId);
             }
         }
+
+        private static string SafeUrl(string url)
+        {
+            try
+            {
+                var u = new Uri(url);
+                var safe = new UriBuilder(u) { Query = string.Empty, Fragment = string.Empty };
+                return safe.Uri.ToString();
+            }
+            catch
+            {
+                return "(invalid-url)";
+            }
+        }
+
+        private static string Trim(string? s, int max = 500) =>
+            string.IsNullOrEmpty(s) ? "" : (s.Length <= max ? s : s[..max]);
+
 
         private static JsonObject BuildEmrPayload(StatusEvent evt)
         {
@@ -123,8 +166,10 @@ namespace Ship.Ses.Transmitter.Worker
                 ["status"] = evt.Status,
                 ["message"] = evt.Message,
                 ["shipId"] = evt.ShipId,
-                ["transactionId"] = evt.TransactionId
+                ["transactionId"] = evt.TransactionId,
+                ["correlationId"] = evt.CorrelationId 
             };
+
             //if (evt.Data != null)
             //{
             //    var json = evt.Data.ToJson(new MongoDB.Bson.IO.JsonWriterSettings
