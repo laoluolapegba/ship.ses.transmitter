@@ -49,7 +49,6 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             var records = (await _repository.GetByStatusAsync<T>("Pending")).ToList();
             result.Total = records.Count;
 
-            // 🔎 Tell the log whether we found anything (and how many)
             _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", typeof(T).Name, result.Total);
 
             if (result.Total == 0)
@@ -72,9 +71,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             {
                 try
                 {
-                    var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
-                    if (string.IsNullOrWhiteSpace(callbackUrl))
-                        throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
+                    //disable callback for now
+                    //var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
+                    //if (string.IsNullOrWhiteSpace(callbackUrl))
+                    //    throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
 
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
@@ -83,7 +83,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         record.ResourceType,
                         record.ResourceId,
                         record.FhirJson.ToCleanJson(),
-                        callbackUrl,
+                        record.ClientEMRCallbackUrl,
                         token);
 
                     var accepted = apiResponse != null

@@ -103,7 +103,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         public async Task<PatientSyncRecord?> GetPatientByTransactionIdAsync(string transactionId, CancellationToken ct = default)
         {
             var col = _database.GetCollection<PatientSyncRecord>("transformed_pool_patients");
-            var filter = Builders<PatientSyncRecord>.Filter.Eq("syncedFhirResourceId", transactionId);
+            var filter = Builders<PatientSyncRecord>.Filter.Eq("transactionId", transactionId);
             return await col.Find(filter).FirstOrDefaultAsync(ct);
         }
 

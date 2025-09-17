@@ -125,12 +125,12 @@ namespace Ship.Ses.Transmitter.Worker
                 ["shipId"] = evt.ShipId,
                 ["transactionId"] = evt.TransactionId
             };
-            if (evt.Data != null)
-            {
-                var json = evt.Data.ToJson(new MongoDB.Bson.IO.JsonWriterSettings
-                { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
-                obj["data"] = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
-            }
+            //if (evt.Data != null)
+            //{
+            //    var json = evt.Data.ToJson(new MongoDB.Bson.IO.JsonWriterSettings
+            //    { OutputMode = MongoDB.Bson.IO.JsonOutputMode.CanonicalExtendedJson });
+            //    obj["data"] = System.Text.Json.Nodes.JsonNode.Parse(json)!.AsObject();
+            //}
             return obj;
         }
 

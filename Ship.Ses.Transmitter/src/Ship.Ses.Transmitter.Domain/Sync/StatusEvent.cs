@@ -43,6 +43,8 @@ namespace Ship.Ses.Transmitter.Domain.Sync
 
         [BsonElement("data")]
         public BsonDocument? Data { get; set; }                  // full Patient payload from SHIP
+        [BsonElement("correlationId")]
+        public string CorrelationId { get; set; }
 
         // Outbox fields for EMR callback processing
         [BsonElement("callbackStatus")]
