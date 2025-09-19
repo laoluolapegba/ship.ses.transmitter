@@ -29,44 +29,91 @@ namespace Ship.Ses.Transmitter.Worker
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
-            _logger.LogInformation("🛰️ EMR Callback Worker started");
+            const int batchSize = 50;
+            var pollDelay = TimeSpan.FromSeconds(10);
+
+            _logger.LogInformation("🛰️ EMR Callback Worker started (batchSize={Batch}, pollDelay={Delay}s)",
+                batchSize, pollDelay.TotalSeconds);
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var repo = scope.ServiceProvider.GetRequiredService<IMongoSyncRepository>();
 
+                    _logger.LogInformation("🔎 Polling for due EMR callbacks…");
+
                     // Fetch due jobs
-                    var due = await repo.FetchDueEmrCallbacksAsync(batchSize: 50, stoppingToken);
+                    var due = await repo.FetchDueEmrCallbacksAsync(batchSize: batchSize, stoppingToken);
+                    var dueList = due?.ToList() ?? new List<StatusEvent>();
+                    sw.Stop();
 
-                    foreach (var evt in due)
+                    _logger.LogInformation("📥 Poll complete: found={Count}, elapsedMs={Elapsed}",
+                        dueList.Count, sw.ElapsedMilliseconds);
+
+                    if (dueList.Count == 0)
                     {
-                        if (!await repo.TryMarkInFlightAsync(evt.Id, stoppingToken))
-                            continue;
+                        _logger.LogDebug("🕰️ No callbacks due. Sleeping for {Delay}s…", pollDelay.TotalSeconds);
+                        await Task.Delay(pollDelay, stoppingToken);
+                        continue;
+                    }
 
+                    foreach (var evt in dueList)
+                    {
+                        if (stoppingToken.IsCancellationRequested) break;
+
+                        // Mark in-flight (skip if someone else took it)
+                        if (!await repo.TryMarkInFlightAsync(evt.Id, stoppingToken))
+                        {
+                            _logger.LogDebug("⏭️ Skipped: could not mark in-flight (id={Id}, tx={Tx}, corr={Corr})",
+                                evt.Id, evt.TransactionId, evt.CorrelationId);
+                            continue;
+                        }
+
+                        // Resolve target URL
                         var targetUrl = await ResolveTargetUrlAsync(repo, evt, stoppingToken);
                         if (string.IsNullOrWhiteSpace(targetUrl))
                         {
-                            await repo.MarkEmrCallbackRetryAsync(evt.Id, "Missing EMR callback URL",
-                                delay: TimeSpan.FromMinutes(10), targetUrl: null, stoppingToken);
+                            _logger.LogWarning("❗ Missing EMR callback URL (tx={Tx}, corr={Corr}). Scheduling retry…",
+                                evt.TransactionId, evt.CorrelationId);
+
+                            await repo.MarkEmrCallbackRetryAsync(
+                                evt.Id,
+                                "Missing EMR callback URL",
+                                delay: TimeSpan.FromMinutes(10),
+                                targetUrl: null,
+                                stoppingToken);
+
                             continue;
                         }
+
+                        _logger.LogInformation("🚚 Dispatching EMR callback (tx={Tx}, corr={Corr}) → {Url}",
+                            evt.TransactionId, evt.CorrelationId, SafeUrl(targetUrl));
 
                         await SendToEmrAsync(repo, evt, targetUrl, stoppingToken);
                     }
                 }
+                catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    // normal shutdown
+                }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "EMR Callback worker loop error");
+                    _logger.LogError(ex, "💥 EMR Callback worker loop error after {Elapsed}ms", sw.ElapsedMilliseconds);
                 }
 
-                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+                if (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogDebug("⏲️ Sleeping for {Delay}s before next poll…", pollDelay.TotalSeconds);
+                    await Task.Delay(pollDelay, stoppingToken);
+                }
             }
 
             _logger.LogInformation("🛑 EMR Callback Worker stopped.");
         }
+
 
         private async Task<string?> ResolveTargetUrlAsync(IMongoSyncRepository repo, StatusEvent evt, CancellationToken ct)
         {

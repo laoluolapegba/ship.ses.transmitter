@@ -42,7 +42,7 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string PayloadHash { get; set; } = default!;
 
         [BsonElement("data")]
-        public BsonDocument? Data { get; set; }                  // full Patient payload from SHIP
+        public BsonDocument? Data { get; set; }
         [BsonElement("correlationId")]
         public string CorrelationId { get; set; }
 
@@ -63,14 +63,17 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public DateTime? CallbackDeliveredAt { get; set; }
 
         [BsonElement("emrTargetUrl")]
-        public string? EmrTargetUrl { get; set; }                // optional cache (we’ll read from PatientSyncRecord)
+        public string? EmrTargetUrl { get; set; } 
 
         [BsonElement("emrResponseStatusCode")]
         public int? EmrResponseStatusCode { get; set; }
 
         [BsonElement("emrResponseBody")]
         public string? EmrResponseBody { get; set; }
-
+        [BsonElement("clientId")]
+        public string? ClientId { get; set; }
+        [BsonElement("facilityId")]
+        public string? FacilityId { get; set; }
         public override string CollectionName => "patientstatusevents";
     }
 
