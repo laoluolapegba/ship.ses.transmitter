@@ -11,18 +11,18 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Worker
 {
-    public class GenericFhirSyncWorker<T> : BackgroundService
+    public class GenericFhirSyncWorker1<T> : BackgroundService
         where T : FhirSyncRecord, new()
     {
         private readonly IServiceProvider _sp;
-        private readonly ILogger<GenericFhirSyncWorker<T>> _logger;
+        private readonly ILogger<GenericFhirSyncWorker1<T>> _logger;
         private readonly IClientSyncConfigProvider _configProvider;
         private readonly string _clientId;
 
-        public GenericFhirSyncWorker(
+        public GenericFhirSyncWorker1(
             IServiceProvider sp,
             IOptions<SeSClientOptions> options,
-            ILogger<GenericFhirSyncWorker<T>> logger,
+            ILogger<GenericFhirSyncWorker1<T>> logger,
             IClientSyncConfigProvider configProvider)
         {
             _sp = sp;

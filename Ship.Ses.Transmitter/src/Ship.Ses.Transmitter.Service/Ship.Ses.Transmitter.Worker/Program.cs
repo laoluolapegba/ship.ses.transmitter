@@ -154,7 +154,8 @@ builder.Services
 
 //  Register Background Workers for Each FHIR Resource Type
 
-builder.Services.AddHostedService<PatientSyncWorker>();
+//builder.Services.AddHostedService<PatientSyncWorker>();
+builder.Services.AddHostedService<ResourcesFhirSyncWorker>();
 builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 //builder.Services.AddHostedService<EncounterSyncWorker>();
 builder.Services.AddHostedService<EmrCallbackWorker>();
