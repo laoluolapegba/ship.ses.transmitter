@@ -170,7 +170,7 @@ namespace Ship.Ses.Transmitter.Worker
 
         private SyncClientStatus BuildStatus(string status, string? lastError = null)
         {
-            _logger.LogWarning("Build status.. {ClientId} ...", _clientId);
+            _logger.LogWarning("Build client status.. {ClientId} ...", _clientId);
 
             // Get a unique batch ID if needed
             var batchId = status == "Running" ?

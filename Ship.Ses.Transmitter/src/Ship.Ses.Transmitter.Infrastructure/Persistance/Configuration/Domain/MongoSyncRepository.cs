@@ -18,7 +18,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
     public class MongoSyncRepository : IMongoSyncRepository
     {
         private readonly IMongoDatabase _database;
-
+        private IMongoCollection<StatusEvent> StatusEventCol =>
+        _database.GetCollection<StatusEvent>("patientstatusevents");
         /// <summary>
         /// Initializes a new instance of the <see cref="MongoSyncRepository"/> class.
         /// </summary>
@@ -197,6 +198,73 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
         }
 
+        /// <summary>
+        /// Find status events that are still PENDING (i.e., we posted to SHIP)
+        /// and are older than the timeout, and whose probe window is due.
+        /// We only probe items that have not yet transitioned to SUCCESS/FAILED by callback.
+        /// </summary>
+        public async Task<List<StatusEvent>> FetchDueStatusProbesAsync(
+            TimeSpan age, int batchSize, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+            var olderThan = now - age;
+
+            var filter = Builders<StatusEvent>.Filter.And(
+                Builders<StatusEvent>.Filter.Eq(x => x.Status, "PENDING"),
+                Builders<StatusEvent>.Filter.Lte(x => x.ReceivedAtUtc, olderThan),
+                Builders<StatusEvent>.Filter.Ne(x => x.ProbeStatus, "InFlight"),
+                Builders<StatusEvent>.Filter.Ne(x => x.ProbeStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Lte(x => x.ProbeNextAttemptAt, now)
+            );
+
+            return await StatusEventCol.Find(filter)
+                .Sort(Builders<StatusEvent>.Sort.Ascending(x => x.ProbeNextAttemptAt))
+                .Limit(batchSize)
+                .ToListAsync(ct);
+        }
+
+        /// <summary>Atomic claim to avoid double processing.</summary>
+        public async Task<bool> TryMarkProbeInFlightAsync(ObjectId id, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+            var filter = Builders<StatusEvent>.Filter.And(
+                Builders<StatusEvent>.Filter.Eq(x => x.Id, id),
+                Builders<StatusEvent>.Filter.Eq(x => x.Status, "PENDING"),
+                Builders<StatusEvent>.Filter.Ne(x => x.ProbeStatus, "InFlight"),
+                Builders<StatusEvent>.Filter.Ne(x => x.ProbeStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Lte(x => x.ProbeNextAttemptAt, now)
+            );
+
+            var update = Builders<StatusEvent>.Update
+                .Set(x => x.ProbeStatus, "InFlight")
+                .Set(x => x.ProbeLastError, null);
+
+            var res = await StatusEventCol.UpdateOneAsync(filter, update, cancellationToken: ct);
+            return res.ModifiedCount == 1;
+        }
+
+        /// <summary>Mark probe success; usually paired with writing a new StatusEvent with the payload.</summary>
+        public Task MarkProbeSucceededAsync(ObjectId id, CancellationToken ct = default)
+        {
+            var update = Builders<StatusEvent>.Update
+                .Set(x => x.ProbeStatus, "Succeeded")
+                .Set(x => x.ProbeNextAttemptAt, null);
+            return StatusEventCol.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
+        }
+
+        /// <summary>Retry with backoff or abandon.</summary>
+        public Task MarkProbeRetryAsync(ObjectId id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default)
+        {
+            var upd = Builders<StatusEvent>.Update
+                .Set(x => x.ProbeStatus, abandon ? "Abandoned" : "Pending")
+                .Set(x => x.ProbeLastError, Truncate(error, 2000))
+                .Set(x => x.ProbeNextAttemptAt, DateTime.UtcNow.Add(delay))
+                .Inc(x => x.ProbeAttempts, 1);
+
+            return StatusEventCol.UpdateOneAsync(x => x.Id == id, upd, cancellationToken: ct);
+        }
+        public Task InsertStatusEventAsync(StatusEvent ev, CancellationToken ct = default)
+        => StatusEventCol.InsertOneAsync(ev, cancellationToken: ct);
         private static string? Truncate(string? s, int max) =>
             string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
 

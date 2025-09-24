@@ -22,7 +22,9 @@ namespace Ship.Ses.Transmitter.Domain.SyncModels
         [JsonPropertyName("data")]
         public JsonElement? Data { get; set; }  // Optional payload returned by API
         [JsonPropertyName("transactionId")]
-        public string transactionId { get; set; } = string.Empty; // Optional transaction ID for tracking
+        public string transactionId { get; set; } = string.Empty; 
+
+        public string? Raw { get; set; }
     }
 
 

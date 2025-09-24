@@ -100,6 +100,54 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         ));
                         _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
 
+                        // 🔽 seed a PENDING StatusEvent so the probe worker can check later
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(record.ResourceId))
+                            {
+                                var pendingEvt = new StatusEvent
+                                {
+                                    TransactionId = apiResponse.transactionId,
+                                    ResourceType = record.ResourceType, 
+                                    ResourceId = record.ResourceId,
+                                    ShipId = string.Empty,
+                                    Status = "PENDING",
+                                    Message = "Awaiting callback",
+                                    ReceivedAtUtc = DateTime.UtcNow, 
+                                    Source = "SHIP",
+                                    Headers = null,
+                                    PayloadHash = string.Empty,
+                                    Data = null,  // no payload yet
+                                    CorrelationId = record.CorrelationId ?? string.Empty,
+
+                                    // --- Probe fields
+                                    ProbeStatus = "Pending",
+                                    ProbeAttempts = 0,
+                                    ProbeNextAttemptAt = DateTime.UtcNow,  // worker also checks "age" via ReceivedAtUtc
+                                    ProbeLastError = null
+                                };
+
+                                await _repository.InsertStatusEventAsync(pendingEvt, token);
+
+                                _logger.LogInformation(
+                                    "📬 Seeded PENDING StatusEvent for txn={Txn} {Type}/{Id} (corrId={Corr}) – will probe if no callback in time.",
+                                    pendingEvt.TransactionId, pendingEvt.ResourceType, pendingEvt.ResourceId, pendingEvt.CorrelationId);
+                            }
+                            else
+                            {
+                                // We can’t probe without a concrete resourceId for GET /{type}/{id}
+                                _logger.LogWarning(
+                                    "⚠️ Skipped seeding PENDING StatusEvent: missing ResourceId for {Type} (txn={Txn}, corrId={Corr}).",
+                                    record.ResourceType, apiResponse?.transactionId, record.CorrelationId ?? record.TransactionId);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex,
+                                "❌ Failed to create PENDING StatusEvent for {Type}/{Id} (txn={Txn}). Probe fallback disabled for this item.",
+                                record.ResourceType, record.ResourceId, apiResponse?.transactionId);
+                        }
+
                         if (record.StagingId.HasValue)
                             marksToSubmit.Add(new StagingTransmissionMark(record.StagingId.Value, apiResponse!.transactionId, DateTime.UtcNow));
                     }

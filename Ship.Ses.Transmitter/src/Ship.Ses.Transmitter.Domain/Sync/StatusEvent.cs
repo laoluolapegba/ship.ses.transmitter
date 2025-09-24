@@ -74,6 +74,17 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string? ClientId { get; set; }
         [BsonElement("facilityId")]
         public string? FacilityId { get; set; }
+        [BsonElement("probeStatus")]
+        public string? ProbeStatus { get; set; } = "Pending"; // Pending|InFlight|Succeeded|Abandoned
+
+        [BsonElement("probeAttempts")]
+        public int ProbeAttempts { get; set; }
+
+        [BsonElement("probeNextAttemptAt")]
+        public DateTime? ProbeNextAttemptAt { get; set; } = DateTime.UtcNow;
+
+        [BsonElement("probeLastError")]
+        public string? ProbeLastError { get; set; }
         public override string CollectionName => "patientstatusevents";
     }
 

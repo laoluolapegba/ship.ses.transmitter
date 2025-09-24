@@ -64,6 +64,8 @@ builder.Services
 builder.Services.Configure<SeSClientOptions>(builder.Configuration.GetSection("SeSClient"));
 builder.Services.Configure<ShipAdminApiOptions>(builder.Configuration.GetSection("ShipAdminApi"));
 builder.Services.Configure<ShipAdminAuthOptions>(builder.Configuration.GetSection("ShipAdminAuth"));
+builder.Services.Configure<StatusProbeSettings>(builder.Configuration.GetSection("StatusProbe"));
+
 
 var seSClientOpts = builder.Configuration.GetSection("SeSClient").Get<SeSClientOptions>() ?? new SeSClientOptions();
 if (seSClientOpts.UseShipAdminApi)
@@ -154,12 +156,13 @@ builder.Services
 
 //  Register Background Workers for Each FHIR Resource Type
 
-//builder.Services.AddHostedService<PatientSyncWorker>();
-builder.Services.AddHostedService<ResourcesFhirSyncWorker>();
+builder.Services.AddHostedService<PatientSyncWorker>();
+//builder.Services.AddHostedService<ResourcesFhirSyncWorker>();
 builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 //builder.Services.AddHostedService<EncounterSyncWorker>();
 builder.Services.AddHostedService<EmrCallbackWorker>();
 builder.Services.AddHostedService<ClientHeartbeatWorker>();
+builder.Services.AddHostedService<StatusProbeWorker>();
 
 var test = builder.Services.BuildServiceProvider().GetService<ISyncMetricsCollector>();
 Console.WriteLine(test == null

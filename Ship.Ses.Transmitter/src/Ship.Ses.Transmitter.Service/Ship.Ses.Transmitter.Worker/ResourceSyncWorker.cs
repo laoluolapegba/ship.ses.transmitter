@@ -125,7 +125,7 @@ namespace Ship.Ses.Transmitter.Worker
             }
             finally
             {
-                _logger.LogInformation("🛑 All-Resources FHIR Sync Worker stopped.");
+                _logger.LogInformation("🛑 Generic FHIR Sync Worker stopped.");
             }
         }
 
