@@ -78,6 +78,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
+                    //{    "status": "success",    "code": 202,    "message": "Request Accepted" }
+                    //{"status":"success","code":202,"message":"Request accepted","transactionId":"id1_d1kVHOB34j7IUgNzsZpco7J7NTSWqDHaMe"}
                     var apiResponse = await _fhirApiService.SendAsync(
                         FhirOperation.Post,
                         record.ResourceType,
@@ -91,19 +93,20 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         && apiResponse.Code == 202;
 
                     if (accepted)
-                    {
+                    { 
+
                         successUpdates.Add(ObjectId.Parse(record.Id), (
                             status: "Synced",
                             message: apiResponse?.Message ?? "Request accepted",
                             transactionId: apiResponse?.transactionId ?? string.Empty,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogInformation("✅ Sync success for {Id}", record.ResourceId);
+                        _logger.LogInformation("✅ Sync success for {Id}", record.TransactionId);
 
                         // 🔽 seed a PENDING StatusEvent so the probe worker can check later
                         try
                         {
-                            if (!string.IsNullOrWhiteSpace(record.ResourceId))
+                            if (!string.IsNullOrWhiteSpace(apiResponse.transactionId))
                             {
                                 var pendingEvt = new StatusEvent
                                 {
@@ -119,6 +122,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                                     PayloadHash = string.Empty,
                                     Data = null,  // no payload yet
                                     CorrelationId = record.CorrelationId ?? string.Empty,
+                                    FacilityId = record.FacilityId ?? string.Empty,
+                                    ClientId = record.ClientId,
 
                                     // --- Probe fields
                                     ProbeStatus = "Pending",
@@ -131,21 +136,20 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
                                 _logger.LogInformation(
                                     "📬 Seeded PENDING StatusEvent for txn={Txn} {Type}/{Id} (corrId={Corr}) – will probe if no callback in time.",
-                                    pendingEvt.TransactionId, pendingEvt.ResourceType, pendingEvt.ResourceId, pendingEvt.CorrelationId);
+                                    pendingEvt.TransactionId, pendingEvt.ResourceType, pendingEvt.TransactionId, pendingEvt.CorrelationId);
                             }
                             else
                             {
                                 // We can’t probe without a concrete resourceId for GET /{type}/{id}
-                                _logger.LogWarning(
-                                    "⚠️ Skipped seeding PENDING StatusEvent: missing ResourceId for {Type} (txn={Txn}, corrId={Corr}).",
-                                    record.ResourceType, apiResponse?.transactionId, record.CorrelationId ?? record.TransactionId);
+                                _logger.LogWarning("⚠️ Skipped seeding PENDING StatusEvent: missing API TransactionId for {Type} (corrId={Corr}).",
+                                    record.ResourceType, record.CorrelationId ?? record.TransactionId);
                             }
                         }
                         catch (Exception ex)
                         {
                             _logger.LogError(ex,
                                 "❌ Failed to create PENDING StatusEvent for {Type}/{Id} (txn={Txn}). Probe fallback disabled for this item.",
-                                record.ResourceType, record.ResourceId, apiResponse?.transactionId);
+                                record.ResourceType, record.TransactionId, apiResponse?.transactionId);
                         }
 
                         if (record.StagingId.HasValue)
@@ -159,7 +163,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             transactionId: apiResponse?.transactionId,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.ResourceId, apiResponse?.Message);
+                        _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.TransactionId, apiResponse?.Message);
 
                         if (record.StagingId.HasValue)
                             marksToFail.Add(record.StagingId.Value);

@@ -34,6 +34,11 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         Task<bool> TryMarkProbeInFlightAsync(ObjectId id, CancellationToken ct = default);
         Task MarkProbeSucceededAsync(ObjectId id, CancellationToken ct = default);
         Task MarkProbeRetryAsync(ObjectId id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default);
+        Task MarkProbeSuccessAndAttachPayloadAsync(
+    ObjectId id,
+    string message,
+    BsonDocument? payload,
+    CancellationToken ct = default);
     }
 
 }

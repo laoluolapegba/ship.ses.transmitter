@@ -267,6 +267,26 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         => StatusEventCol.InsertOneAsync(ev, cancellationToken: ct);
         private static string? Truncate(string? s, int max) =>
             string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
+        public Task MarkProbeSuccessAndAttachPayloadAsync(
+    ObjectId id,
+    string message,
+    BsonDocument? payload,
+    CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+
+            var update = Builders<StatusEvent>.Update
+                .Set(x => x.Status, "SUCCESS")
+                .Set(x => x.Message, message)
+                .Set(x => x.Source, "PROBE")
+                .Set(x => x.Data, payload)
+                .Set(x => x.ProbeStatus, "Succeeded")
+                .Set(x => x.ProbeLastError, null)
+                .Set(x => x.ProbeNextAttemptAt, null);
+
+            return col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
+        }
+
 
     }
 }

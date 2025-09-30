@@ -112,7 +112,7 @@ namespace Ship.Ses.Transmitter.Worker
                 var res = await _fhir.SendAsync(
                     FhirOperation.Get,
                     resourceType: ev.ResourceType,
-                    resourceId: ev.ResourceId,
+                    resourceId: ev.TransactionId,
                     cancellationToken: ct);
 
                 // Handle the two types of api responses:
@@ -121,27 +121,17 @@ namespace Ship.Ses.Transmitter.Worker
 
                 if (res.Code == 200 && string.Equals(res.Status, "success", StringComparison.OrdinalIgnoreCase))
                 {
-                    var probeEvent = new StatusEvent
-                    {
-                        TransactionId = ev.TransactionId,
-                        ResourceType = ev.ResourceType,
-                        ResourceId = ev.ResourceId,
-                        ShipId = ev.ShipId ?? string.Empty,
-                        Status = "SUCCESS",
-                        Message = "Resource details fetched successfully (probe)",
-                        ReceivedAtUtc = DateTime.UtcNow,
-                        Source = "PROBE",
-                        Headers = null,
-                        PayloadHash = string.Empty,
-                        Data = TryMakeBsonPayload(res),
-                        CorrelationId = ev.CorrelationId
-                    };
+                    var payload = TryMakeBsonPayload(res);
 
-                    await _repo.InsertStatusEventAsync(probeEvent, ct);
-                    await _repo.MarkProbeSucceededAsync(ev.Id, ct);
+                    // ✅ Update the existing PENDING event to SUCCESS and attach payload
+                    await _repo.MarkProbeSuccessAndAttachPayloadAsync(
+                        ev.Id,
+                        "Resource details fetched successfully (probe)",
+                        payload,
+                        ct);
 
                     _logger.LogInformation(
-                        "✅ Probe success saved to patientstatusevents for {ResourceType}/{ResourceId} (txn={Txn}).",
+                        "✅ Probe success UPDATED existing StatusEvent for {ResourceType}/{ResourceId} (txn={Txn}).",
                         ev.ResourceType, ev.ResourceId, ev.TransactionId);
                     return;
                 }
