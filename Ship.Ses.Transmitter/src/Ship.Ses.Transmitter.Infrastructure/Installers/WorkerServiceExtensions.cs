@@ -136,36 +136,20 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
         }
         public static IServiceCollection AddFhirApiClient(this IServiceCollection services, IConfiguration config)
         {
-            services.Configure<FhirApiSettings>(config.GetSection("FhirApi"));
-            //Console.WriteLine("FhirApiSettings: " + config.GetSection("FhirApi").Value);
-            var fhirApiSection = config.GetSection("FhirApi");
-            //Console.WriteLine($"  BaseUrl: {fhirApiSection["BaseUrl"]}");
-            //Console.WriteLine($"  ClientCertPath: {fhirApiSection["ClientCertPath"]}");
-            //Console.WriteLine($"  ClientCertPassword: {fhirApiSection["ClientCertPassword"]}");
+            services.Configure<FhirRoutingSettings>(config.GetSection("FhirRouting"));
 
-            services.AddHttpClient("FhirApi", (sp, client) =>
-            {
-                var settings = sp.GetRequiredService<IOptions<FhirApiSettings>>().Value;
-                client.BaseAddress = new Uri(settings.BaseUrl);
-                client.Timeout = TimeSpan.FromSeconds(settings.TimeoutSeconds);
-            })
-            //temporarily disable client certificate handling
-            //.ConfigurePrimaryHttpMessageHandler(sp =>
-            //{
-            //    var settings = sp.GetRequiredService<IOptions<FhirApiSettings>>().Value;
-            //    var certPath = Path.Combine(AppContext.BaseDirectory, settings.ClientCertPath);
-            //    var cert = new X509Certificate2(certPath, settings.ClientCertPassword);
-
-            //    var handler = new HttpClientHandler
-            //    {
-            //        ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
-            //    };
-
-            //    handler.ClientCertificates.Add(cert);
-            //    return handler;
-            //})
-            .AddPolicyHandler(GetRetryPolicy())
-            .AddPolicyHandler(GetCircuitBreakerPolicy());
+            services.AddHttpClient("FhirApi")
+                .ConfigureHttpClient((sp, client) =>
+                {
+                    var routing = sp.GetRequiredService<IOptionsMonitor<FhirRoutingSettings>>().CurrentValue;
+                    var timeout = routing?.Default?.TimeoutSeconds;
+                    if (timeout.HasValue && timeout.Value > 0)
+                    {
+                        client.Timeout = TimeSpan.FromSeconds(timeout.Value);
+                    }
+                })
+                .AddPolicyHandler(GetRetryPolicy())
+                .AddPolicyHandler(GetCircuitBreakerPolicy());
 
             services.AddScoped<IFhirApiService, FhirApiService>();
 
