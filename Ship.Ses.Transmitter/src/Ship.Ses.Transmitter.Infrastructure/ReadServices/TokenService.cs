@@ -3,19 +3,19 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using Ship.Ses.Transmitter.Domain.Patients;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
+using System.IO;
+using System.Net.Http;
+using System.Net.Http.Headers;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 {
-    using Microsoft.Extensions.Logging;
-    using Microsoft.Extensions.Options;
-    using Ship.Ses.Transmitter.Domain.Patients;
-    using Ship.Ses.Transmitter.Infrastructure.Settings;
-    using System.IO;
-    using System.Net.Http;
-    using System.Net.Http.Headers;
-    using System.Text;
-    using System.Text.Json;
-    using System.Text.Json.Serialization;
+
 
     public class TokenService
     {
@@ -142,97 +142,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             return body;
         }
-        public async Task<string> GetAccessTokenAsync1(CancellationToken cancellationToken = default)
-        {
-            var form = new Dictionary<string, string?>
-            {
-                ["grant_type"] = string.IsNullOrWhiteSpace(_auth.GrantType) ? "client_credentials" : _auth.GrantType,
-                ["client_id"] = _auth.ClientId,
-                ["client_secret"] = _auth.ClientSecret,
-                ["scope"] = _auth.Scope
-            };
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, _auth.TokenEndpoint)
-            {
-                Content = new FormUrlEncodedContent(form!)
-            };
-            req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            _logger.LogInformation("🔐 Requesting access token: endpoint={Endpoint}, client_id={ClientId}, scope={Scope}",
-                _auth.TokenEndpoint, Mask(_auth.ClientId), _auth.Scope);
-
-            using var resp = await _httpClient.SendAsync(req, cancellationToken);
-            var body = await resp.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogDebug("Token response HTTP {Status}. Body: {Body}", (int)resp.StatusCode, Trunc(body, 1000));
-
-            // Parse your known shape even on non-2xx to surface server error messages
-            AuthTokenResponse? parsed = null;
-            try { parsed = JsonSerializer.Deserialize<AuthTokenResponse>(body, JsonOpts); } catch { /* ignore */ }
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                var summary = parsed is null
-                    ? $"HTTP {(int)resp.StatusCode} {resp.ReasonPhrase}"
-                    : $"HTTP {(int)resp.StatusCode} ({parsed.Status}/{parsed.Code}) {parsed.Message}";
-                _logger.LogError("❌ Token request failed: {Summary}. Body: {Body}", summary, Trunc(body, 1000));
-                throw new HttpRequestException(summary);
-            }
-
-            if (parsed == null || !string.Equals(parsed.Status, "success", StringComparison.OrdinalIgnoreCase) || parsed.Code != 200)
-            {
-                var msg = parsed is null ? "Unparseable token response" : parsed.Message ?? "Non-success token payload";
-                _logger.LogError("❌ Token payload error: status={Status}, code={Code}, message={Msg}",
-                    parsed?.Status, parsed?.Code, msg);
-                throw new InvalidOperationException($"Token payload not successful: {msg}");
-            }
-
-            var token = parsed.Data?.AccessToken;
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                _logger.LogError("❌ access_token missing. Body: {Body}", Trunc(body, 1000));
-                throw new InvalidOperationException("access_token missing in response.");
-            }
-
-            _logger.LogInformation(" Token acquired (expires_in={ExpiresIn}s, type={Type})",
-                parsed.Data?.ExpiresIn, parsed.Data?.TokenType);
-            return token!;
-        }
-
-        
-        public async Task<string> GetAccessTokenAsync0(CancellationToken cancellationToken = default)
-        {
-            var payload = new
-            {
-                clientId = _authSettings.ClientId,
-                clientSecret = _authSettings.ClientSecret,
-                grantType = _authSettings.GrantType,
-                scope = _authSettings.Scope
-            };
-
-            var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
-            var request = new HttpRequestMessage(HttpMethod.Post, _authSettings.TokenEndpoint)
-            {
-                Content = content
-            };
-
-            _logger.LogInformation("🔐 Requesting access token...");
-
-            var response = await _httpClient.SendAsync(request, cancellationToken);
-            _logger.LogDebug("GetAccessToken response : {response}", response);
-            response.EnsureSuccessStatusCode();
-
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            var tokenResponse = JsonSerializer.Deserialize<AuthTokenResponse>(json);
-
-            if (tokenResponse?.Data?.AccessToken == null)
-            {
-                _logger.LogError("❌ Token response did not include access token: {Json}", json);
-                throw new InvalidOperationException("Token endpoint did not return a valid access token.");
-            }
-
-            _logger.LogInformation("✅ Token acquired, expires in {ExpiresIn} seconds", tokenResponse.Data.ExpiresIn);
-            return tokenResponse.Data.AccessToken;
-        }
+      
     }
 
 }

@@ -26,6 +26,21 @@ namespace Ship.Ses.Transmitter.Domain.Patients
         Task MarkEmrCallbackRetryAsync(ObjectId id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default);
         Task<bool> TryMarkInFlightAsync(ObjectId id, CancellationToken ct = default);
 
+        Task InsertStatusEventAsync(StatusEvent ev, CancellationToken ct = default);
+
+
+        // --- Probe helpers-
+        Task<List<StatusEvent>> FetchDueStatusProbesAsync(TimeSpan age, int batchSize, CancellationToken ct = default);
+        Task<bool> TryMarkProbeInFlightAsync(ObjectId id, CancellationToken ct = default);
+        Task MarkProbeSucceededAsync(ObjectId id, CancellationToken ct = default);
+        Task MarkProbeRetryAsync(ObjectId id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default);
+        Task MarkProbeSuccessAndAttachPayloadAsync(
+    ObjectId id,
+    string message,
+    BsonDocument? payload,
+    CancellationToken ct = default);
     }
 
 }
+
+

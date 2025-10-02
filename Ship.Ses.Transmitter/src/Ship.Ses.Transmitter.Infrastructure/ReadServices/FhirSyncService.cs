@@ -43,15 +43,23 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
         public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new()
         {
-            //var records = await _repository.GetPendingRecordsAsync<T>();
-
             var result = new SyncResultDto();
 
-            var records = await _repository.GetByStatusAsync<T>("Pending");
-            result.Total = records.Count();
+            // Avoid double-enumeration and DB re-query; materialize once.
+            var records = (await _repository.GetByStatusAsync<T>("Pending")).ToList();
+            result.Total = records.Count;
 
-            var successIds = new List<string>();
-            var failedIds = new List<string>();
+            _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", typeof(T).Name, result.Total);
+
+            if (result.Total == 0)
+            {
+                _logger.LogInformation("✅ No pending {ResourceType} records. Nothing to sync.", typeof(T).Name);
+                return result; // early exit
+            }
+
+            // Optional: show sample IDs at Debug
+            if (_logger.IsEnabled(LogLevel.Debug))
+                _logger.LogDebug("Pending {ResourceType} sample IDs: {Ids}", typeof(T).Name, records.Take(5).Select(r => r.ResourceId).ToArray());
 
             var successUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
             var failedUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
@@ -63,31 +71,89 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             {
                 try
                 {
-                    var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
-                    if (string.IsNullOrWhiteSpace(callbackUrl))
-                        throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
+                    //disable callback for now
+                    //var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
+                    //if (string.IsNullOrWhiteSpace(callbackUrl))
+                    //    throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
 
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
 
+                    //{    "status": "success",    "code": 202,    "message": "Request Accepted" }
+                    //{"status":"success","code":202,"message":"Request accepted","transactionId":"id1_d1kVHOB34j7IUgNzsZpco7J7NTSWqDHaMe"}
                     var apiResponse = await _fhirApiService.SendAsync(
-                    FhirOperation.Post,
-                    record.ResourceType,
-                    record.ResourceId,
-                    record.FhirJson.ToCleanJson(),
-                    callbackUrl,
-                    token);
+                        FhirOperation.Post,
+                        record.ResourceType,
+                        record.ResourceId,
+                        record.FhirJson.ToCleanJson(),
+                        record.ClientEMRCallbackUrl,
+                        token);
 
+                    var accepted = apiResponse != null
+                        && apiResponse.Status?.Equals("success", StringComparison.OrdinalIgnoreCase) == true
+                        && apiResponse.Code == 202;
 
-                    //  Interpret the FHIR API response
-                    if (apiResponse != null && apiResponse.Status?.ToLower() == "success" && apiResponse.Code == 202)
-                    {
+                    if (accepted)
+                    { 
+
                         successUpdates.Add(ObjectId.Parse(record.Id), (
                             status: "Synced",
                             message: apiResponse?.Message ?? "Request accepted",
                             transactionId: apiResponse?.transactionId ?? string.Empty,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogInformation("Sync success for {Id}", record.ResourceId);
+                        _logger.LogInformation("✅ Sync success for {Id}", record.TransactionId);
+
+                        // 🔽 seed a PENDING StatusEvent so the probe worker can check later
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(apiResponse.transactionId))
+                            {
+                                var pendingEvt = new StatusEvent
+                                {
+                                    TransactionId = apiResponse.transactionId,
+                                    ResourceType = record.ResourceType, 
+                                    ResourceId = record.ResourceId,
+                                    ShipId = string.Empty,
+                                    Status = "PENDING",
+                                    Message = "Awaiting callback",
+                                    ReceivedAtUtc = DateTime.UtcNow, 
+                                    Source = "SHIP",
+                                    Headers = null,
+                                    PayloadHash = string.Empty,
+                                    Data = null,  // no payload yet
+                                    CorrelationId = record.CorrelationId ?? string.Empty,
+                                    FacilityId = record.FacilityId ?? string.Empty,
+                                    ClientId = record.ClientId,
+
+                                    // --- Probe fields
+                                    ProbeStatus = "Pending",
+                                    ProbeAttempts = 0,
+                                    ProbeNextAttemptAt = DateTime.UtcNow,  // worker also checks "age" via ReceivedAtUtc
+                                    ProbeLastError = null
+                                };
+
+                                await _repository.InsertStatusEventAsync(pendingEvt, token);
+
+                                _logger.LogInformation(
+                                    "📬 Seeded PENDING StatusEvent for txn={Txn} {Type}/{Id} (corrId={Corr}) – will probe if no callback in time.",
+                                    pendingEvt.TransactionId, pendingEvt.ResourceType, pendingEvt.TransactionId, pendingEvt.CorrelationId);
+                            }
+                            else
+                            {
+                                // We can’t probe without a concrete resourceId for GET /{type}/{id}
+                                _logger.LogWarning("⚠️ Skipped seeding PENDING StatusEvent: missing API TransactionId for {Type} (corrId={Corr}).",
+                                    record.ResourceType, record.CorrelationId ?? record.TransactionId);
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogError(ex,
+                                "❌ Failed to create PENDING StatusEvent for {Type}/{Id} (txn={Txn}). Probe fallback disabled for this item.",
+                                record.ResourceType, record.TransactionId, apiResponse?.transactionId);
+                        }
+
+                        if (record.StagingId.HasValue)
+                            marksToSubmit.Add(new StagingTransmissionMark(record.StagingId.Value, apiResponse!.transactionId, DateTime.UtcNow));
                     }
                     else
                     {
@@ -97,27 +163,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             transactionId: apiResponse?.transactionId,
                             rawResponse: System.Text.Json.JsonSerializer.Serialize(apiResponse)
                         ));
-                        _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.ResourceId, apiResponse?.Message);
-                    }
+                        _logger.LogWarning("❌ API returned error for {Id}: {Message}", record.TransactionId, apiResponse?.Message);
 
-
-                    var accepted = apiResponse != null
-                       && apiResponse.Status?.Equals("success", StringComparison.OrdinalIgnoreCase) == true
-                       && apiResponse.Code == 202;
-
-                    if (record.StagingId.HasValue)
-                    {
-                        if (accepted)
-                        {
-                            marksToSubmit.Add(new StagingTransmissionMark(
-                                record.StagingId.Value,
-                                apiResponse.transactionId,
-                                DateTime.UtcNow));
-                        }
-                        else
-                        {
+                        if (record.StagingId.HasValue)
                             marksToFail.Add(record.StagingId.Value);
-                        }
                     }
                 }
                 catch (Exception ex)
@@ -127,18 +176,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         message: ex.Message,
                         transactionId: null,
                         rawResponse: System.Text.Json.JsonSerializer.Serialize(new { Error = ex.Message, StackTrace = ex.StackTrace })
-
                     ));
+
                     if (record.StagingId.HasValue)
                         marksToFail.Add(record.StagingId.Value);
 
                     _logger.LogError(ex, "❌ Sync failed for {Id}: {Message}", record.ResourceId, ex.Message);
                 }
-
-                
             }
 
-            // Persist results to Mongo
+            // Persist results
             if (successUpdates.Any())
                 await _repository.BulkUpdateStatusAsync<T>(successUpdates);
 
@@ -151,20 +198,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             await _stagingUpdateWriter.BulkMarkSubmittedAsync(marksToSubmit, token);
             await _stagingUpdateWriter.BulkMarkFailedAsync(marksToFail, token);
+
+            // 📊 Summary (you also log from the worker, but this helps if the caller changes later)
+            _logger.LogInformation("📊 Sync result for {ResourceType}: Total={Total}, Synced={Synced}, Failed={Failed}",
+                typeof(T).Name, result.Total, result.Synced, result.Failed);
+
             return result;
-
-            //if (successIds.Any())
-            //{
-            //    var objectIds = successIds.Select(id => ObjectId.Parse(id)).ToList();
-            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Synced");
-            //}
-
-            //if (failedIds.Any())
-            //{
-            //    var objectIds = failedIds.Select(id => ObjectId.Parse(id)).ToList();
-            //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
-            //}
         }
+
         private static string BuildCallbackUrl(string template, FhirSyncRecord record)
         {
             if (string.IsNullOrWhiteSpace(template)) return null;

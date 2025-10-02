@@ -42,7 +42,9 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string PayloadHash { get; set; } = default!;
 
         [BsonElement("data")]
-        public BsonDocument? Data { get; set; }                  // full Patient payload from SHIP
+        public BsonDocument? Data { get; set; }
+        [BsonElement("correlationId")]
+        public string CorrelationId { get; set; }
 
         // Outbox fields for EMR callback processing
         [BsonElement("callbackStatus")]
@@ -61,15 +63,29 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public DateTime? CallbackDeliveredAt { get; set; }
 
         [BsonElement("emrTargetUrl")]
-        public string? EmrTargetUrl { get; set; }                // optional cache (we’ll read from PatientSyncRecord)
+        public string? EmrTargetUrl { get; set; } 
 
         [BsonElement("emrResponseStatusCode")]
         public int? EmrResponseStatusCode { get; set; }
 
         [BsonElement("emrResponseBody")]
         public string? EmrResponseBody { get; set; }
+        [BsonElement("clientId")]
+        public string? ClientId { get; set; }
+        [BsonElement("facilityId")]
+        public string? FacilityId { get; set; }
+        [BsonElement("probeStatus")]
+        public string? ProbeStatus { get; set; } = "Pending"; // Pending|InFlight|Succeeded|Abandoned
 
-        public override string CollectionName => "patientstatusevents";
+        [BsonElement("probeAttempts")]
+        public int ProbeAttempts { get; set; }
+
+        [BsonElement("probeNextAttemptAt")]
+        public DateTime? ProbeNextAttemptAt { get; set; } = DateTime.UtcNow;
+
+        [BsonElement("probeLastError")]
+        public string? ProbeLastError { get; set; }
+        public override string CollectionName => "fhirstatusevents";
     }
 
 }

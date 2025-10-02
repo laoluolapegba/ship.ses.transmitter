@@ -33,6 +33,7 @@ using Microsoft.EntityFrameworkCore;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain.Sync;
 using Ship.Ses.Transmitter.Application.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Security;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Installers
 {
@@ -74,15 +75,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
             services.AddHttpClient<TokenService>();
             services.AddSingleton<TokenService>();
+            services.AddSingleton<AdminTokenService>();
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 
             var sesSetting = configuration.GetSection("SeSClient");
             Console.WriteLine($"  ClientId: {sesSetting["ClientId"]}");
-
-            services.AddScoped<IClientSyncConfigProvider, EfClientSyncConfigProvider>();
-           
-
 
             static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() =>
     HttpPolicyExtensions
@@ -174,30 +172,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
 
         public static IServiceCollection AddSyncMetrics(this IServiceCollection services, IConfiguration config)
         {
-            /*
-            // ✅ Bind DatabaseSettings from appsettings.json
-            services.Configure<SourceDbSettings>(config.GetSection("SourceDbSettings"));
-
-            // ✅ Register MongoDB Client
-            services.AddSingleton<IMongoClient>(sp =>
-            {
-                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
-                return new MongoClient(settings.ConnectionString);
-            });
-
-            // ✅ Register MongoDB Database
-            services.AddScoped(sp =>
-            {
-                var client = sp.GetRequiredService<IMongoClient>();
-                var settings = sp.GetRequiredService<IOptions<SourceDbSettings>>().Value;
-                return client.GetDatabase(settings.DatabaseName);
-            });
-            */
-
-            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
-            services.AddScoped<ISyncMetricsWriter, MySqlSyncMetricsWriter>();
             
-
+            services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
+            
             return services;
         }
         
