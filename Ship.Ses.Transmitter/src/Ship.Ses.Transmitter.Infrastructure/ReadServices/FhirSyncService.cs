@@ -1,7 +1,6 @@
 ﻿using AngleSharp.Io;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Extensions;
 using MongoDB.Bson;
 using MongoDB.Bson.IO;
@@ -13,7 +12,6 @@ using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Services;
-using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Infrastructure.Shared;
 using System;
 using System.Collections.Generic;
@@ -28,16 +26,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly IMongoSyncRepository _repository;
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
-        private readonly IOptionsMonitor<FhirApiSettings> _apiSettings;
         private readonly IStagingUpdateWriter _stagingUpdateWriter;
 
         public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, 
-            IOptionsMonitor<FhirApiSettings> apiSettings, IStagingUpdateWriter stagingUpdateWriter)
+            IStagingUpdateWriter stagingUpdateWriter)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
-            _apiSettings = apiSettings;
             _stagingUpdateWriter = stagingUpdateWriter;
         }
 
@@ -86,6 +82,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         record.ResourceId,
                         record.FhirJson.ToCleanJson(),
                         record.ClientEMRCallbackUrl,
+                        record.ShipService,
                         token);
 
                     var accepted = apiResponse != null
@@ -124,6 +121,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                                     CorrelationId = record.CorrelationId ?? string.Empty,
                                     FacilityId = record.FacilityId ?? string.Empty,
                                     ClientId = record.ClientId,
+                                    ShipService = record.ShipService,
 
                                     // --- Probe fields
                                     ProbeStatus = "Pending",

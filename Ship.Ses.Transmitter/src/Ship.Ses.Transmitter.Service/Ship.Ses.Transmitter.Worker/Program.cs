@@ -1,4 +1,6 @@
 ﻿//using Google.Protobuf.WellKnownTypes;
+using System;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -35,11 +37,44 @@ builder.Logging.AddSerilog();
 builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
 builder.Configuration.AddEnvironmentVariables();
 
-builder.Services
-    .AddOptions<FhirApiSettings>()
-    .Bind(builder.Configuration.GetSection("FhirApi"))
-    .Validate(o => !string.IsNullOrWhiteSpace(o.BaseUrl), "FhirApi:BaseUrl is required")
-    .Validate(o => o.TimeoutSeconds > 0, "FhirApi:TimeoutSeconds must be > 0")
+var fhirRoutingSection = builder.Configuration.GetSection("FhirRouting");
+var legacyFhirSection = builder.Configuration.GetSection("FhirApi");
+
+var fhirOptionsBuilder = builder.Services.AddOptions<FhirRoutingSettings>();
+if (fhirRoutingSection.Exists())
+{
+    fhirOptionsBuilder.Bind(fhirRoutingSection);
+}
+else if (legacyFhirSection.Exists())
+{
+    var legacy = legacyFhirSection.Get<FhirApiSettings>() ?? throw new InvalidOperationException("Invalid FhirApi configuration");
+    fhirOptionsBuilder.Configure(opts =>
+    {
+        opts.Default.BaseUrl = legacy.BaseUrl ?? throw new InvalidOperationException("FhirApi:BaseUrl is required");
+        opts.Default.TimeoutSeconds = legacy.TimeoutSeconds > 0 ? legacy.TimeoutSeconds : 30;
+        opts.Default.CallbackUrlTemplate = legacy.CallbackUrlTemplate;
+        if (!string.IsNullOrWhiteSpace(legacy.ClientCertPath))
+        {
+            opts.Default.ClientCert = new FhirClientCertificateSettings
+            {
+                Path = legacy.ClientCertPath,
+                Password = legacy.ClientCertPassword
+            };
+        }
+    });
+}
+else
+{
+    throw new InvalidOperationException("Missing FHIR routing configuration (FhirRouting or FhirApi).");
+}
+
+fhirOptionsBuilder
+    .PostConfigure(opts =>
+    {
+        opts.Default ??= new FhirRouteSettings();
+        opts.Apis ??= new List<FhirApiRouteSettings>();
+    })
+    .Validate(opts => !string.IsNullOrWhiteSpace(opts.Default.BaseUrl), "FhirRouting:Default:BaseUrl is required")
     .ValidateOnStart();
 
 builder.Services.AddHttpClient("EmrCallback")
@@ -156,8 +191,8 @@ builder.Services
 
 //  Register Background Workers for Each FHIR Resource Type
 
-builder.Services.AddHostedService<PatientSyncWorker>();
-//builder.Services.AddHostedService<ResourcesFhirSyncWorker>();
+//builder.Services.AddHostedService<PatientSyncWorker>();
+builder.Services.AddHostedService<ResourcesFhirSyncWorker>();
 builder.Services.AddHostedService<MetricsSyncReporterWorker>();
 //builder.Services.AddHostedService<EncounterSyncWorker>();
 builder.Services.AddHostedService<EmrCallbackWorker>();

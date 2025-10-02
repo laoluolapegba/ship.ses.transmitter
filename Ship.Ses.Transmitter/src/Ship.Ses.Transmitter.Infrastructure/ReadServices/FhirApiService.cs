@@ -1,12 +1,8 @@
 using System;
-using System.IO;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Net.Http.Json;
-using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -26,17 +22,19 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<FhirApiService> _logger;
-        private readonly FhirApiSettings _settings;
+        private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
+        private readonly IOptions<AuthSettings> _authSettings;
         private readonly TokenService _tokenService;
         public FhirApiService(
             IHttpClientFactory httpClientFactory,
-            IOptions<FhirApiSettings> settings,
+            IOptions<FhirRoutingSettings> routingSettings,
             IOptions<AuthSettings> authSettings,
             ILogger<FhirApiService> logger,
             TokenService tokenService)
         {
             _httpClientFactory = httpClientFactory;
-            _settings = settings.Value;
+            _routingSettings = routingSettings;
+            _authSettings = authSettings;
             _logger = logger;
             _tokenService = tokenService;
         }
@@ -48,8 +46,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
         string resourceId = null,
         string jsonPayload = null,
         string? callbackUrl = null,
+        string? shipService = null,
     CancellationToken cancellationToken = default)
         {
+            var (routeName, route) = _routingSettings.CurrentValue.ResolveRoute(shipService, resourceType);
+
+            if (string.IsNullOrWhiteSpace(route.BaseUrl))
+                throw new InvalidOperationException($"FHIR route '{routeName}' does not have a BaseUrl configured.");
+
             var client = _httpClientFactory.CreateClient("FhirApi");
 
             var method = operation switch
@@ -61,12 +65,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 _ => throw new ArgumentOutOfRangeException(nameof(operation), "Unsupported FHIR operation")
             };
 
+            var baseUrl = route.BaseUrl.TrimEnd('/');
+
+            callbackUrl ??= route.CallbackUrlTemplate;
+
             string endpoint = operation switch
             {
-                FhirOperation.Post => $"{_settings.BaseUrl}/api/v1/{resourceType}",
-                FhirOperation.Put => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
-                FhirOperation.Delete => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
-                FhirOperation.Get => $"{_settings.BaseUrl}/api/v1/{resourceType}/{resourceId}",
+                FhirOperation.Post => $"{baseUrl}/api/v1/{resourceType}",
+                FhirOperation.Put => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
+                FhirOperation.Delete => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
+                FhirOperation.Get => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
                 _ => throw new InvalidOperationException("Unknown FHIR operation")
 
 
@@ -100,15 +108,22 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 _logger.LogInformation("📦 Wrapped FHIR payload: {Payload}", wrappedJson);
             }
 
-            _logger.LogInformation("📡 Sending {Method} request to {Endpoint} for {ResourceType} (id={ResourceId})",
-                method, endpoint, resourceType, resourceId ?? "<new>");
+            _logger.LogInformation("📡 Sending {Method} request to {Endpoint} for {ResourceType} (id={ResourceId}) via {Route}",
+                method, endpoint, resourceType, resourceId ?? "<new>", routeName);
 
             try
             {
-                var token = await _tokenService.GetAccessTokenAsync(cancellationToken);
+                var scope = string.IsNullOrWhiteSpace(route.Scope) ? _authSettings.Value.Scope : route.Scope;
+                var token = await _tokenService.GetAccessTokenAsync(scope, cancellationToken);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 
-                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+                using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                if (route.TimeoutSeconds > 0)
+                {
+                    linkedCts.CancelAfter(TimeSpan.FromSeconds(route.TimeoutSeconds));
+                }
+
+                using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, linkedCts.Token);
 
                 var mediaType = response.Content?.Headers?.ContentType?.MediaType;
                 var responseRaw = response.Content is null ? null : await response.Content.ReadAsStringAsync(cancellationToken);
