@@ -28,16 +28,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly IMongoSyncRepository _repository;
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
-        private readonly IOptionsMonitor<FhirApiSettings> _apiSettings;
+        private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
         private readonly IStagingUpdateWriter _stagingUpdateWriter;
 
-        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, 
-            IOptionsMonitor<FhirApiSettings> apiSettings, IStagingUpdateWriter stagingUpdateWriter)
+        public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService,
+            IOptionsMonitor<FhirRoutingSettings> routingSettings, IStagingUpdateWriter stagingUpdateWriter)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
-            _apiSettings = apiSettings;
+            _routingSettings = routingSettings;
             _stagingUpdateWriter = stagingUpdateWriter;
         }
 
@@ -63,7 +63,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             {
                 try
                 {
-                    var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
+                    var callbackUrl = BuildCallbackUrl(_routingSettings.CurrentValue.CallbackUrlTemplate, record);
                     if (string.IsNullOrWhiteSpace(callbackUrl))
                         throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
 
@@ -75,6 +75,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     record.ResourceId,
                     record.FhirJson.ToCleanJson(),
                     callbackUrl,
+                    record.ShipService,
                     token);
 
 
@@ -165,7 +166,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             //    await _repository.BulkUpdateStatusAsync<T>(objectIds, "Failed");
             //}
         }
-        private static string BuildCallbackUrl(string template, FhirSyncRecord record)
+        private static string? BuildCallbackUrl(string? template, FhirSyncRecord record)
         {
             if (string.IsNullOrWhiteSpace(template)) return null;
 

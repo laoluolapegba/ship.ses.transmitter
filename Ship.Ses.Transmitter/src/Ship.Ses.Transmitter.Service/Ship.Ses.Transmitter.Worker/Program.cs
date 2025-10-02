@@ -27,10 +27,11 @@ builder.Configuration.AddJsonFile("appsettings.json", optional: false, reloadOnC
 builder.Configuration.AddEnvironmentVariables();
 
 builder.Services
-    .AddOptions<FhirApiSettings>()
-    .Bind(builder.Configuration.GetSection("FhirApi"))
-    .Validate(o => !string.IsNullOrWhiteSpace(o.BaseUrl), "FhirApi:BaseUrl is required")
-    .Validate(o => o.TimeoutSeconds > 0, "FhirApi:TimeoutSeconds must be > 0")
+    .AddOptions<FhirRoutingSettings>()
+    .Bind(builder.Configuration.GetSection("FhirRouting"))
+    .Validate(o => o?.Default is not null && !string.IsNullOrWhiteSpace(o.Default.BaseUrl), "FhirRouting:Default:BaseUrl is required")
+    .Validate(o => o?.Default?.TimeoutSeconds > 0, "FhirRouting:Default:TimeoutSeconds must be > 0")
+    .Validate(o => !string.IsNullOrWhiteSpace(o?.CallbackUrlTemplate), "FhirRouting:CallbackUrlTemplate is required")
     .ValidateOnStart();
 
 builder.Services.AddHttpClient("EmrCallback")
