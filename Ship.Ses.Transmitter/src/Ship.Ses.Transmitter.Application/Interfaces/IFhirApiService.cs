@@ -16,7 +16,6 @@ namespace Ship.Ses.Transmitter.Application.Sync
         string resourceId = null,
         string jsonPayload = null,
         string? callbackUrl = null,
-        string? shipService = null,
         CancellationToken cancellationToken = default);
     }
 }

@@ -64,8 +64,5 @@ namespace Ship.Ses.Transmitter.Domain.Patients
 
         [BsonElement("clientEMRCallbackUrl")]
         public string? ClientEMRCallbackUrl { get; set; }
-
-        [BsonElement("shipService")]
-        public string? ShipService { get; set; }
     }
 }
