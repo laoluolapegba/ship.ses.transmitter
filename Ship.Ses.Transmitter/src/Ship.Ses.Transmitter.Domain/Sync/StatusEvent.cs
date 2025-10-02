@@ -74,6 +74,8 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string? ClientId { get; set; }
         [BsonElement("facilityId")]
         public string? FacilityId { get; set; }
+        [BsonElement("shipService")]
+        public string? ShipService { get; set; }
         [BsonElement("probeStatus")]
         public string? ProbeStatus { get; set; } = "Pending"; // Pending|InFlight|Succeeded|Abandoned
 

@@ -113,6 +113,7 @@ namespace Ship.Ses.Transmitter.Worker
                     FhirOperation.Get,
                     resourceType: ev.ResourceType,
                     resourceId: ev.TransactionId,
+                    shipService: ev.ShipService,
                     cancellationToken: ct);
 
                 // Handle the two types of api responses:
