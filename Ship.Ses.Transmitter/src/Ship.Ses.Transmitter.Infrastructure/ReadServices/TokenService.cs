@@ -36,18 +36,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
 
         }
-        public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default, string? scopeOverride = null)
+        public async Task<string> GetAccessTokenAsync(CancellationToken cancellationToken = default)
         {
-            var effectiveScope = string.IsNullOrWhiteSpace(scopeOverride)
-                ? _authSettings.Scope
-                : scopeOverride;
-
             var payloadObj = new
             {
                 clientId = _authSettings.ClientId,
                 clientSecret = _authSettings.ClientSecret,
                 grantType = string.IsNullOrWhiteSpace(_authSettings.GrantType) ? "client_credentials" : _authSettings.GrantType,
-                scope = effectiveScope
+                scope = _authSettings.Scope
             };
 
             var jsonPayload = JsonSerializer.Serialize(payloadObj, new JsonSerializerOptions
@@ -62,7 +58,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
             _logger.LogInformation("🔐 Requesting access token: endpoint={Endpoint}, client_id={ClientId}, scope={Scope}",
-                _authSettings.TokenEndpoint, Mask(_authSettings.ClientId), effectiveScope);
+                _authSettings.TokenEndpoint, Mask(_authSettings.ClientId), _authSettings.Scope);
 
             using var resp = await _httpClient.SendAsync(req, cancellationToken);
             var body = await resp.Content.ReadAsStringAsync(cancellationToken);
