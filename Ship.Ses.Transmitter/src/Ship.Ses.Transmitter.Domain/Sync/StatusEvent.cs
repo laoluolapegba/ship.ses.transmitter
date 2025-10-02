@@ -85,7 +85,7 @@ namespace Ship.Ses.Transmitter.Domain.Sync
 
         [BsonElement("probeLastError")]
         public string? ProbeLastError { get; set; }
-        public override string CollectionName => "patientstatusevents";
+        public override string CollectionName => "fhirstatusevents";
     }
 
 }

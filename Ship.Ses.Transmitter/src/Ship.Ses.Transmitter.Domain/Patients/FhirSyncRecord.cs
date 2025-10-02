@@ -64,6 +64,8 @@ namespace Ship.Ses.Transmitter.Domain.Patients
 
         [BsonElement("facilityId")]
         public string? FacilityId { get; set; }
+        [BsonElement("shipService")]
+        public string ShipService { get; set; } = default!;
 
         [BsonElement("stagingId")]
         [BsonRepresentation(BsonType.Int64)]
