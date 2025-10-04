@@ -19,7 +19,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
     {
         private readonly IMongoDatabase _database;
         private IMongoCollection<StatusEvent> StatusEventCol =>
-        _database.GetCollection<StatusEvent>("patientstatusevents");
+        _database.GetCollection<StatusEvent>("fhirstatusevents");
         /// <summary>
         /// Initializes a new instance of the <see cref="MongoSyncRepository"/> class.
         /// </summary>
@@ -116,7 +116,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         /// <returns></returns>
         public async Task<List<StatusEvent>> FetchDueEmrCallbacksAsync(int batchSize, CancellationToken ct = default)
         {
-            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var now = DateTime.UtcNow;
 
             var filter = Builders<StatusEvent>.Filter.And(
@@ -138,7 +138,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         /// <returns></returns>
         public async Task<bool> TryMarkInFlightAsync(ObjectId id, CancellationToken ct = default)
         {
-            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var now = DateTime.UtcNow;
 
             var filter = Builders<StatusEvent>.Filter.And(
@@ -167,7 +167,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         /// <returns></returns>
         public async Task MarkEmrCallbackSucceededAsync(ObjectId id, int statusCode, string? body, string? targetUrl, CancellationToken ct = default)
         {
-            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var update = Builders<StatusEvent>.Update
                 .Set(x => x.CallbackStatus, "Succeeded")
                 .Set(x => x.CallbackDeliveredAt, DateTime.UtcNow)
@@ -188,7 +188,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
         /// <returns></returns>
         public async Task MarkEmrCallbackRetryAsync(ObjectId id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default)
         {
-            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var update = Builders<StatusEvent>.Update
                 .Inc(x => x.CallbackAttempts, 1)
                 .Set(x => x.CallbackStatus, "Pending")
@@ -273,7 +273,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
     BsonDocument? payload,
     CancellationToken ct = default)
         {
-            var col = _database.GetCollection<StatusEvent>("patientstatusevents");
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
 
             var update = Builders<StatusEvent>.Update
                 .Set(x => x.Status, "SUCCESS")

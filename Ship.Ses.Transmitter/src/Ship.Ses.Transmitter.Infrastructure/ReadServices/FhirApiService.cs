@@ -22,12 +22,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<FhirApiService> _logger;
+        //private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
         private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
         private readonly IOptions<AuthSettings> _authSettings;
         private readonly TokenService _tokenService;
         public FhirApiService(
             IHttpClientFactory httpClientFactory,
-            IOptions<FhirRoutingSettings> routingSettings,
+            IOptionsMonitor<FhirRoutingSettings> routingSettings,
             IOptions<AuthSettings> authSettings,
             ILogger<FhirApiService> logger,
             TokenService tokenService)
@@ -67,25 +68,35 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
 
             var baseUrl = route.BaseUrl.TrimEnd('/');
 
-            callbackUrl ??= route.CallbackUrlTemplate;
+            callbackUrl ??= route.CallbackUrlTemplate
+                 ?? _routingSettings.CurrentValue.Default?.CallbackUrlTemplate;
 
-            string endpoint = operation switch
+            string endpoint;
+
+            if (string.Equals(shipService, "PDS", StringComparison.OrdinalIgnoreCase))
             {
-                FhirOperation.Post => $"{baseUrl}/api/v1/{resourceType}",
-                FhirOperation.Put => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
-                FhirOperation.Delete => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
-                FhirOperation.Get => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
-                _ => throw new InvalidOperationException("Unknown FHIR operation")
+                // PDS = per resource path
+                endpoint = operation switch
+                {
+                    FhirOperation.Post => $"{baseUrl}/api/v1/{resourceType}",
+                    FhirOperation.Put => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
+                    FhirOperation.Delete => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
+                    FhirOperation.Get => $"{baseUrl}/api/v1/{resourceType}/{resourceId}",
+                    _ => throw new InvalidOperationException("Unknown FHIR operation")
+                };
+            }
+            else
+            {
+                // Non-PDS (e.g. SCR) = single fixed path
+                endpoint = operation switch
+                {
+                    FhirOperation.Post => $"{baseUrl}",
+                    _ => throw new NotSupportedException(
+                            $"Operation {operation} not supported for service {shipService}")
+                };
+            }
 
-
-                //FhirOperation.Post => $"{_settings.BaseUrl}/api/v1/{resourceType}/Create",
-                //FhirOperation.Put => $"{_settings.BaseUrl}/api/v1/{resourceType}/Update/{resourceId}",
-                //FhirOperation.Delete => $"{_settings.BaseUrl}/api/v1/{resourceType}/Delete/{resourceId}",
-                //FhirOperation.Get => $"{_settings.BaseUrl}/api/v1/{resourceType}/Get/{resourceId}",
-                //_ => throw new InvalidOperationException("Unknown FHIR operation")
-
-            };
-
+            
             var request = new HttpRequestMessage(method, endpoint);
 
             if (!string.IsNullOrEmpty(jsonPayload) && (method == HttpMethod.Post || method == HttpMethod.Put))
@@ -101,7 +112,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 var wrappedJson = JsonSerializer.Serialize(envelope, new JsonSerializerOptions
                 {
                     PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-                    WriteIndented = false
+                    WriteIndented = false,
+                    DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
                 });
 
                 request.Content = new StringContent(wrappedJson, Encoding.UTF8, "application/json");

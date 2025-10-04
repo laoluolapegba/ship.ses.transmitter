@@ -26,18 +26,18 @@ namespace Ship.Ses.Transmitter.Worker
     public sealed class StatusProbeWorker : BackgroundService
     {
         private readonly ILogger<StatusProbeWorker> _logger;
-        private readonly IMongoSyncRepository _repo;
+        
         private readonly IFhirApiService _fhir;
         private readonly StatusProbeSettings _opt;
-
+        private readonly IServiceScopeFactory _scopeFactory;
         public StatusProbeWorker(
             ILogger<StatusProbeWorker> logger,
-            IMongoSyncRepository repo,
+            IServiceScopeFactory scopeFactory,
             IFhirApiService fhir,
             IOptions<StatusProbeSettings> opt)
         {
             _logger = logger;
-            _repo = repo;
+            _scopeFactory = scopeFactory;
             _fhir = fhir;
             _opt = opt.Value;
         }
@@ -58,9 +58,13 @@ namespace Ship.Ses.Transmitter.Worker
 
             while (!stoppingToken.IsCancellationRequested)
             {
+                IMongoSyncRepository? repo = null;
                 try
                 {
-                    var candidates = await _repo.FetchDueStatusProbesAsync(age, _opt.BatchSize, stoppingToken);
+                    using var scope = _scopeFactory.CreateScope();
+                    repo = scope.ServiceProvider.GetRequiredService<IMongoSyncRepository>();
+
+                    var candidates = await repo.FetchDueStatusProbesAsync(age, _opt.BatchSize, stoppingToken);
 
                     if (candidates.Count == 0)
                     {
@@ -74,10 +78,10 @@ namespace Ship.Ses.Transmitter.Worker
                     // Process sequentially 
                     foreach (var ev in candidates)
                     {
-                        if (!await _repo.TryMarkProbeInFlightAsync(ev.Id, stoppingToken))
+                        // Use the scoped 'repo'
+                        if (!await repo.TryMarkProbeInFlightAsync(ev.Id, stoppingToken))
                             continue;
-
-                        await ProbeOneAsync(ev, stoppingToken);
+                        await ProbeOneAsync(ev, repo, stoppingToken);
                     }
                 }
                 catch (OperationCanceledException) { /* shutdown */ }
@@ -90,7 +94,7 @@ namespace Ship.Ses.Transmitter.Worker
             }
         }
 
-        private async Task ProbeOneAsync(StatusEvent ev, CancellationToken ct)
+        private async Task ProbeOneAsync(StatusEvent ev, IMongoSyncRepository repo, CancellationToken ct)
         {
             var attempt = ev.ProbeAttempts + 1;
 
@@ -100,7 +104,8 @@ namespace Ship.Ses.Transmitter.Worker
                 {
                     _logger.LogWarning("⚠️ Probe skipped: missing ResourceType/ResourceId for transactionId={TransactionId}",
                         ev.TransactionId);
-                    await _repo.MarkProbeRetryAsync(ev.Id, "Missing resource identifiers", TimeSpan.FromMinutes(5), abandon: true, ct);
+                    // Use the passed-in scoped 'repo'
+                    await repo.MarkProbeRetryAsync(ev.Id, "Missing resource identifiers", TimeSpan.FromMinutes(5), abandon: true, ct);
                     return;
                 }
 
@@ -117,15 +122,12 @@ namespace Ship.Ses.Transmitter.Worker
                     cancellationToken: ct);
 
                 // Handle the two types of api responses:
-                // { status:"success", code:200, message:..., data:{...FHIR...} }
-                // { status:"error", code:404, message:"RESOURCE_NOT_FOUND", data:{ OperationOutcome... } }
-
                 if (res.Code == 200 && string.Equals(res.Status, "success", StringComparison.OrdinalIgnoreCase))
                 {
                     var payload = TryMakeBsonPayload(res);
 
                     // ✅ Update the existing PENDING event to SUCCESS and attach payload
-                    await _repo.MarkProbeSuccessAndAttachPayloadAsync(
+                    await repo.MarkProbeSuccessAndAttachPayloadAsync(
                         ev.Id,
                         "Resource details fetched successfully (probe)",
                         payload,
@@ -140,30 +142,26 @@ namespace Ship.Ses.Transmitter.Worker
                 if (res.Code == 404)
                 {
                     // Spec: "for 404. do nothing afterward." → just stop probing
-                    await _repo.MarkProbeSucceededAsync(ev.Id, ct);
+                    await repo.MarkProbeSucceededAsync(ev.Id, ct);
                     _logger.LogWarning(
                         "🟡 Probe 404 RESOURCE_NOT_FOUND for {ResourceType}/{ResourceId} (txn={Txn}) – stopping.",
                         ev.ResourceType, ev.ResourceId, ev.TransactionId);
                     return;
                 }
 
-                // Other codes (429/5xx/etc.) → retry/backoff then abandon
-                await RetryOrAbandonAsync(ev, $"HTTP {res.Code}: {res.Message}", attempt, ct);
+                // Other codes (429/5xx/etc.) → retry/backoff then abandon after max attempts
+                await RetryOrAbandonAsync(ev, repo, $"HTTP {res.Code}: {res.Message}", attempt, ct);
             }
             catch (OperationCanceledException) { /* shutting down */ }
             catch (Exception ex)
             {
-                await RetryOrAbandonAsync(ev, ex.Message, attempt, ct, ex);
+                await RetryOrAbandonAsync(ev, repo, ex.Message, attempt, ct, ex);
             }
         }
-
-        private async Task RetryOrAbandonAsync(StatusEvent ev, string? error, int attempt, CancellationToken ct, Exception? ex = null)
+        private async Task RetryOrAbandonAsync(StatusEvent ev, IMongoSyncRepository repo, string? error, int attempt, CancellationToken ct, Exception? ex = null)
         {
             var abandon = attempt >= _opt.MaxAttempts;
             var delay = TimeSpan.FromSeconds(Math.Min(60, 5 * attempt)); // simple linear backoff capped @60s
-
-            await _repo.MarkProbeRetryAsync(ev.Id, error, delay, abandon, ct);
-
             if (abandon)
             {
                 if (ex != null)
