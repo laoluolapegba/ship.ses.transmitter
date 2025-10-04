@@ -67,7 +67,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             {
                 try
                 {
-                    //disable callback for now
+                    //this is SeS callback URL, not the EMR one
                     //var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
                     //if (string.IsNullOrWhiteSpace(callbackUrl))
                     //    throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
@@ -81,7 +81,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         record.ResourceType,
                         record.ResourceId,
                         record.FhirJson.ToCleanJson(),
-                        record.ClientEMRCallbackUrl,
+                        "", // we will evaluate the callback URL on the api side
                         record.ShipService,
                         token);
 

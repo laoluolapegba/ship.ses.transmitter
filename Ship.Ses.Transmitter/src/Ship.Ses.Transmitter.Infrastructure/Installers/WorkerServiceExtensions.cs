@@ -150,7 +150,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             .AddPolicyHandler(GetRetryPolicy())
             .AddPolicyHandler(GetCircuitBreakerPolicy());
 
-            services.AddScoped<IFhirApiService, FhirApiService>();
+            services.AddSingleton<IFhirApiService, FhirApiService>();
 
             return services;
         }
