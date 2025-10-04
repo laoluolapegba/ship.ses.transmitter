@@ -16,6 +16,7 @@ using Ship.Ses.Transmitter.Infrastructure.Shared;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -37,25 +38,35 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             _stagingUpdateWriter = stagingUpdateWriter;
         }
 
-        public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new()
+        public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token, string? resourceName = null) where T : FhirSyncRecord, new()
         {
             var result = new SyncResultDto();
 
             // Avoid double-enumeration and DB re-query; materialize once.
             var records = (await _repository.GetByStatusAsync<T>("Pending")).ToList();
+            var resourceFilters = ResolveResourceFilters<T>(resourceName);
+            if (resourceFilters is not null)
+            {
+                records = records
+                    .Where(r => !string.IsNullOrWhiteSpace(r.ResourceType) && resourceFilters.Contains(r.ResourceType))
+                    .ToList();
+            }
+
             result.Total = records.Count;
 
-            _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", typeof(T).Name, result.Total);
+            var logResourceName = DescribeResource<T>(resourceFilters);
+
+            _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", logResourceName, result.Total);
 
             if (result.Total == 0)
             {
-                _logger.LogInformation("✅ No pending {ResourceType} records. Nothing to sync.", typeof(T).Name);
+                _logger.LogInformation("✅ No pending {ResourceType} records. Nothing to sync.", logResourceName);
                 return result; // early exit
             }
 
             // Optional: show sample IDs at Debug
             if (_logger.IsEnabled(LogLevel.Debug))
-                _logger.LogDebug("Pending {ResourceType} sample IDs: {Ids}", typeof(T).Name, records.Take(5).Select(r => r.ResourceId).ToArray());
+                _logger.LogDebug("Pending {ResourceType} sample IDs: {Ids}", logResourceName, records.Take(5).Select(r => r.ResourceId).ToArray());
 
             var successUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
             var failedUpdates = new Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)>();
@@ -72,7 +83,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     //if (string.IsNullOrWhiteSpace(callbackUrl))
                     //    throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
 
-                    _logger.LogInformation("📤 Syncing {Type} with ID {Id}", typeof(T).Name, record.ResourceId);
+                    _logger.LogInformation("📤 Syncing {Type} with ID {Id}", logResourceName, record.ResourceId);
 
                     //{    "status": "success",    "code": 202,    "message": "Request Accepted" }
                     //{"status":"success","code":202,"message":"Request accepted","transactionId":"id1_d1kVHOB34j7IUgNzsZpco7J7NTSWqDHaMe"}
@@ -199,9 +210,53 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             // 📊 Summary (you also log from the worker, but this helps if the caller changes later)
             _logger.LogInformation("📊 Sync result for {ResourceType}: Total={Total}, Synced={Synced}, Failed={Failed}",
-                typeof(T).Name, result.Total, result.Synced, result.Failed);
+                logResourceName, result.Total, result.Synced, result.Failed);
 
             return result;
+        }
+
+        private static HashSet<string>? ResolveResourceFilters<T>(string? resourceName) where T : FhirSyncRecord, new()
+        {
+            var names = ResolveResourceNames<T>(resourceName);
+            return names.Count == 0 ? null : new HashSet<string>(names, StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static IReadOnlyCollection<string> ResolveResourceNames<T>(string? resourceName) where T : FhirSyncRecord, new()
+        {
+            if (!string.IsNullOrWhiteSpace(resourceName))
+                return new[] { resourceName };
+
+            var attrs = typeof(T).GetCustomAttributes(typeof(FhirResourceAttribute), false)
+                .OfType<FhirResourceAttribute>()
+                .Select(a => a.ResourceName)
+                .Where(n => !string.IsNullOrWhiteSpace(n))
+                .ToArray();
+
+            if (attrs.Length > 0)
+                return attrs;
+
+            var instance = new T();
+            if (!string.IsNullOrWhiteSpace(instance.ResourceType))
+                return new[] { instance.ResourceType };
+
+            var fallback = typeof(T).Name;
+            if (fallback.EndsWith("SyncRecord", StringComparison.OrdinalIgnoreCase))
+                fallback = fallback[..^"SyncRecord".Length];
+
+            return string.IsNullOrWhiteSpace(fallback)
+                ? Array.Empty<string>()
+                : new[] { fallback };
+        }
+
+        private static string DescribeResource<T>(HashSet<string>? resourceFilters)
+        {
+            if (resourceFilters is null || resourceFilters.Count == 0)
+                return typeof(T).Name;
+
+            if (resourceFilters.Count == 1)
+                return resourceFilters.First();
+
+            return string.Join("/", resourceFilters);
         }
 
         private static string BuildCallbackUrl(string template, FhirSyncRecord record)

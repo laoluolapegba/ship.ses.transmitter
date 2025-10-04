@@ -6,6 +6,7 @@ using Ship.Ses.Transmitter.Application.Sync;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
+using System.Linq;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -153,7 +154,7 @@ namespace Ship.Ses.Transmitter.Worker
             {
                 _logger.LogInformation("🔎 Fetching pending {Resource} records…", resourceName);
 
-                var result = await CallGenericProcessAsync(svc, tRecord, token);
+                var result = await CallGenericProcessAsync(svc, tRecord, resourceName, token);
 
                 _logger.LogInformation("✅ {Resource} synced: Total={Total}, Synced={Synced}, Failed={Failed}",
                     resourceName, result.Total, result.Synced, result.Failed);
@@ -162,11 +163,11 @@ namespace Ship.Ses.Transmitter.Worker
 
         // Bridge to IFhirSyncService.ProcessPendingRecordsAsync<T>(token)
         private static Task<SyncResultDto> CallGenericProcessAsync(
-            IFhirSyncService svc, Type recordType, CancellationToken token)
+            IFhirSyncService svc, Type recordType, string resourceName, CancellationToken token)
         {
             var mi = typeof(IFhirSyncService).GetMethod(nameof(IFhirSyncService.ProcessPendingRecordsAsync))!;
             var closed = mi.MakeGenericMethod(recordType);
-            var taskObj = closed.Invoke(svc, new object[] { token })!;
+            var taskObj = closed.Invoke(svc, new object?[] { token, resourceName })!;
             return (Task<SyncResultDto>)taskObj;
         }
 
@@ -194,17 +195,24 @@ namespace Ship.Ses.Transmitter.Worker
             foreach (var t in types)
             {
                 // Prefer attribute if present
-                var attr = t.GetCustomAttribute<FhirResourceAttribute>(false);
-                var resource = attr?.ResourceName;
-                if (string.IsNullOrWhiteSpace(resource))
+                var attrs = t.GetCustomAttributes<FhirResourceAttribute>(false);
+                if (attrs?.Any() == true)
                 {
-                    // Fall back to {Resource}SyncRecord → {Resource}
-                    var n = t.Name;
-                    resource = n.EndsWith("SyncRecord", StringComparison.OrdinalIgnoreCase)
-                        ? n[..^"SyncRecord".Length]
-                        : n;
+                    foreach (var attr in attrs)
+                    {
+                        if (string.IsNullOrWhiteSpace(attr.ResourceName))
+                            continue;
+                        dict[attr.ResourceName] = t;
+                    }
+                    continue;
                 }
-                dict[resource!] = t;
+
+                // Fall back to {Resource}SyncRecord → {Resource}
+                var n = t.Name;
+                var resource = n.EndsWith("SyncRecord", StringComparison.OrdinalIgnoreCase)
+                    ? n[..^"SyncRecord".Length]
+                    : n;
+                dict[resource] = t;
             }
 
             return dict;
