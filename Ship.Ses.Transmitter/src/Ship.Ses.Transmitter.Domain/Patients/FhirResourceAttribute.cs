@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 namespace Ship.Ses.Transmitter.Domain.Patients
 {
     //explicit resource naming for discovery
-    [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = false)]
+    [AttributeUsage(AttributeTargets.Class, Inherited = false, AllowMultiple = true)]
     public sealed class FhirResourceAttribute : Attribute
     {
         public string ResourceName { get; }

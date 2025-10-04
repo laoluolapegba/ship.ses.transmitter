@@ -12,7 +12,7 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
     {
         //Task ProcessPendingRecordsAsync(FhirResourceType resourceType, CancellationToken cancellationToken);
         //Task ProcessPendingRecordsAsync<T>(CancellationToken token) where T : FhirSyncRecord, new();
-        Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token) 
-    where T : FhirSyncRecord, new();
+        Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token, string? resourceName = null)
+            where T : FhirSyncRecord, new();
     }
 }
