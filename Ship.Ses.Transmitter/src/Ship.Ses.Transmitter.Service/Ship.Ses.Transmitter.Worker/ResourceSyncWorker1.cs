@@ -17,10 +17,10 @@ namespace Ship.Ses.Transmitter.Worker
 {
 
 
-    public sealed class ResourcesFhirSyncWorker : BackgroundService
+    public sealed class ResourcesFhirSyncWorker1 : BackgroundService
     {
         private readonly IServiceProvider _sp;
-        private readonly ILogger<ResourcesFhirSyncWorker> _logger;
+        private readonly ILogger<ResourcesFhirSyncWorker1> _logger;
         private readonly IClientSyncConfigProvider _config;
         private readonly ISyncMetricsWriter _writer;
         private readonly string _clientId;
@@ -34,10 +34,10 @@ namespace Ship.Ses.Transmitter.Worker
         // Resource registry: "Patient" -> typeof(PatientSyncRecord)
         private readonly Dictionary<string, Type> _resourceMap;
 
-        public ResourcesFhirSyncWorker(
+        public ResourcesFhirSyncWorker1(
             IServiceProvider sp,
             IOptions<SeSClientOptions> opts,
-            ILogger<ResourcesFhirSyncWorker> logger,
+            ILogger<ResourcesFhirSyncWorker1> logger,
             IClientSyncConfigProvider config,
             ISyncMetricsWriter writer)
         {
