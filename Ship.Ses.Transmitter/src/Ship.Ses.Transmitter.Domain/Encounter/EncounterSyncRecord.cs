@@ -9,7 +9,7 @@ namespace Ship.Ses.Transmitter.Domain.Encounter
 {
     public class EncounterSyncRecord : FhirSyncRecord
     {
-        public override string CollectionName => "transformed_pool_encounters";
+        public override string CollectionName => "transformed_pool_resources";
     }
 
 }

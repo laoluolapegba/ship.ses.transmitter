@@ -54,7 +54,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             result.Total = records.Count;
 
-            var logResourceName = DescribeResource<T>(resourceFilters);
+            var logResourceName = DescribeResource<T>(resourceFilters); 
 
             _logger.LogInformation("🔎 Pending {ResourceType} records: {Count}", logResourceName, result.Total);
 
@@ -256,8 +256,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
             if (resourceFilters.Count == 1)
                 return resourceFilters.First();
 
-            return string.Join("/", resourceFilters);
+            const int previewLimit = 5; // how many to show
+            var list = resourceFilters.Take(previewLimit).ToArray();
+            var prefix = string.Join(", ", list);
+            var remaining = resourceFilters.Count - previewLimit;
+
+            return remaining > 0
+                ? $"{prefix}, (+{remaining} more)"
+                : prefix;
         }
+
 
         private static string BuildCallbackUrl(string template, FhirSyncRecord record)
         {
