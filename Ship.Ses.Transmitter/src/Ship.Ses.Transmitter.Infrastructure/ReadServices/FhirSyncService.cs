@@ -1,6 +1,7 @@
 ﻿using AngleSharp.Io;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Microsoft.OpenApi.Extensions;
 using MongoDB.Bson;
 using MongoDB.Bson.IO;
@@ -12,11 +13,13 @@ using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Persistance.MySql;
 using Ship.Ses.Transmitter.Infrastructure.Services;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Infrastructure.Shared;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Security.AccessControl;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -28,14 +31,17 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
         private readonly IStagingUpdateWriter _stagingUpdateWriter;
+        private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
 
         public FhirSyncService(IMongoSyncRepository repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService, 
-            IStagingUpdateWriter stagingUpdateWriter)
+            IStagingUpdateWriter stagingUpdateWriter, IOptionsMonitor<FhirRoutingSettings> routingSettings)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
             _stagingUpdateWriter = stagingUpdateWriter;
+            _routingSettings = routingSettings;
+
         }
 
         public async Task<SyncResultDto> ProcessPendingRecordsAsync<T>(CancellationToken token, string? resourceName = null) where T : FhirSyncRecord, new()
@@ -73,26 +79,33 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             var marksToSubmit = new List<StagingTransmissionMark>();
             var marksToFail = new List<long>();
+            
+            
 
             foreach (var record in records)
             {
                 try
                 {
                     //this is SeS callback URL, not the EMR one
-                    //var callbackUrl = _apiSettings.CurrentValue.CallbackUrlTemplate;
-                    //if (string.IsNullOrWhiteSpace(callbackUrl))
-                    //    throw new InvalidOperationException("FhirApi:CallbackUrlTemplate is missing or produced an empty URL.");
+                    var callbackUrl = _routingSettings.CurrentValue.Default?.CallbackUrlTemplate;
+
+                    if (string.IsNullOrWhiteSpace(callbackUrl))
+                    {
+                        _logger.LogWarning("⚠️ CallbackUrlTemplate not configured. Using empty value — callbacks may fail.");
+                        callbackUrl = string.Empty; 
+                    }
 
                     _logger.LogInformation("📤 Syncing {Type} with ID {Id}", logResourceName, record.ResourceId);
 
                     //{    "status": "success",    "code": 202,    "message": "Request Accepted" }
                     //{"status":"success","code":202,"message":"Request accepted","transactionId":"id1_d1kVHOB34j7IUgNzsZpco7J7NTSWqDHaMe"}
+
                     var apiResponse = await _fhirApiService.SendAsync(
                         FhirOperation.Post,
                         record.ResourceType,
                         record.ResourceId,
                         record.FhirJson.ToCleanJson(),
-                        "", // we will evaluate the callback URL on the api side
+                        callbackUrl,
                         record.ShipService,
                         token);
 
