@@ -121,6 +121,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 
             var filter = Builders<StatusEvent>.Filter.And(
                 Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Eq(x => x.Status, "SUCCESS"),
                 Builders<StatusEvent>.Filter.Lte(x => x.CallbackNextAttemptAt, now)
             );
 

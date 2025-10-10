@@ -25,6 +25,12 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 {
+    /// <summary>
+    /// This service processes pending FHIR sync records by sending them to the FHIR API and updating their status based on the response.
+    /// The service supports filtering by resource type and handles both successful and failed sync attempts.
+    /// The service also seeds pending status events for later probing if callbacks are not received in time.
+    /// The service logs detailed information about the sync process, including summaries of results.
+    /// </summary>
     public class FhirSyncService : IFhirSyncService
     {
         private readonly IMongoSyncRepository _repository;

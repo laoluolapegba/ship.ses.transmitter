@@ -11,6 +11,16 @@ using System.Threading.Tasks;
 
 namespace Ship.Ses.Transmitter.Worker
 {
+    /// <summary>
+    /// This worker processes EMR callbacks by polling the database for due status events,
+    /// SHIP status events with pending EMR callbacks, and attempts to deliver them
+    /// The events are gotten from the StatusEvents collection. and initially received from SHIP by the ingestor service.
+    /// The events are sent to the EMR callback URL specified in the patient/general resources record.
+    /// The events are marked as InFlight to avoid duplicate processing.
+    /// The events are retried with exponential backoff on failure.
+    /// The events are marked as succeeded on successful delivery.
+    /// The worker runs continuously until the application is stopped.
+    /// </summary>
     public sealed class EmrCallbackWorker : BackgroundService
     {
         private readonly ILogger<EmrCallbackWorker> _logger;
@@ -214,7 +224,7 @@ namespace Ship.Ses.Transmitter.Worker
                 ["message"] = evt.Message,
                 ["shipId"] = evt.ShipId,
                 ["transactionId"] = evt.TransactionId,
-                ["correlationId"] = evt.CorrelationId 
+                ["correlationId"] = evt.CorrelationId
             };
 
             //if (evt.Data != null)
