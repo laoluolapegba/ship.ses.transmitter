@@ -65,7 +65,7 @@ namespace Ship.Ses.Transmitter.Worker
                     using var scope = _sp.CreateScope();
                     var syncService = scope.ServiceProvider.GetRequiredService<IFhirSyncService>();
 
-                    // 1️⃣ Self-disable if client not active
+                    // Self-disable if client not active
                     if (!await _config.IsClientActiveAsync(_clientId))
                     {
                         _logger.LogWarning("⛔ Client {ClientId} not active. Pausing & polling…", _clientId);
@@ -74,11 +74,11 @@ namespace Ship.Ses.Transmitter.Worker
                         continue;
                     }
 
-                    // 2️⃣ Mark running
+                    // Mark running
                     await SafeWriteStatusAsync(BuildStatus("Running"));
                     _logger.LogInformation("🟢 Sync status=Running (client={ClientId})", _clientId);
 
-                    // 3️⃣ Mid-run deactivation monitor (linked CTS)
+                    // Mid-run deactivation monitor (linked CTS)
                     using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
                     var linkedToken = linkedCts.Token;
                     var deactivatedByServer = false;
@@ -86,7 +86,7 @@ namespace Ship.Ses.Transmitter.Worker
 
                     try
                     {
-                        // 4️⃣ Process both known pools
+                        // Process both known pools
                         await ProcessPoolAsync<PatientSyncRecord>(syncService, linkedToken);
                         await ProcessPoolAsync<GenericResourceSyncRecord>(syncService, linkedToken);
                     }
@@ -117,7 +117,7 @@ namespace Ship.Ses.Transmitter.Worker
                         try { linkedCts.Cancel(); await monitorTask; } catch { /* ignore */ }
                     }
 
-                    // 5️⃣ Sleep between loops
+                    // Sleep between loops
                     _logger.LogInformation("⏲️ Loop complete. Sleeping {Seconds}s…", (int)_loopDelay.TotalSeconds);
                     await Task.Delay(_loopDelay, stoppingToken);
                 }

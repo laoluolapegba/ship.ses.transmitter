@@ -20,12 +20,23 @@ namespace Ship.Ses.Transmitter.Domain.SyncModels
         public string Message { get; set; } = string.Empty;
 
         [JsonPropertyName("data")]
-        public JsonElement? Data { get; set; }  // Optional payload returned by API
+        [JsonConverter(typeof(FlexibleBundleConverter))]
+        public List<PdsBundleItem>? Data { get; set; }
         [JsonPropertyName("transactionId")]
         public string transactionId { get; set; } = string.Empty; 
 
         public string? Raw { get; set; }
     }
-
+    public sealed class PdsBundleItem
+    {
+        [JsonPropertyName("id")]
+        public string? Id { get; init; }
+        [JsonPropertyName("transactionId")]
+        public string? TransactionId { get; init; }
+        [JsonPropertyName("status")]
+        public string? Status { get; init; }
+        [JsonPropertyName("message")]
+        public string? Message { get; init; }
+    }
 
 }
