@@ -26,7 +26,7 @@ namespace Ship.Ses.Transmitter.Worker
     public sealed class StatusProbeWorker : BackgroundService
     {
         private readonly ILogger<StatusProbeWorker> _logger;
-        
+
         private readonly IFhirApiService _fhir;
         private readonly StatusProbeSettings _opt;
         private readonly IServiceScopeFactory _scopeFactory;
@@ -122,14 +122,14 @@ namespace Ship.Ses.Transmitter.Worker
                     cancellationToken: ct);
 
                 // Handle the two types of api responses:
-                if (res.Code == 200 && string.Equals(res.Status, "success", StringComparison.OrdinalIgnoreCase))
+                if (res.Code == 200 && string.Equals(res.Status, "SUCCESS", StringComparison.OrdinalIgnoreCase))
                 {
                     var payload = TryMakeBsonPayload(res);
 
                     // ✅ Update the existing PENDING event to SUCCESS and attach payload
                     await repo.MarkProbeSuccessAndAttachPayloadAsync(
                         ev.Id,
-                        "Resource details fetched successfully (probe)",
+                        "Resource details processed successfully (probe)",
                         payload,
                         ct);
 
@@ -192,7 +192,7 @@ namespace Ship.Ses.Transmitter.Worker
         {
             try
             {
-                // 1) Raw JSON (if the FhirApiService added it)
+                // Raw JSON (if the FhirApiService added it)
                 var rawProp = res.GetType().GetProperty("Raw");
                 if (rawProp != null)
                 {
@@ -201,7 +201,7 @@ namespace Ship.Ses.Transmitter.Worker
                         return MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(raw);
                 }
 
-                // 2) Data property (JsonElement or arbitrary object)
+                // Data property (JsonElement or arbitrary object)
                 var dataProp = res.GetType().GetProperty("Data");
                 if (dataProp != null)
                 {
@@ -213,7 +213,7 @@ namespace Ship.Ses.Transmitter.Worker
                     }
                 }
 
-                // 3) Fallback: serialize whole response (ensures we persist *something*)
+                // Fallback: serialize whole response (ensures we persist *something*)
                 var whole = JsonSerializer.Serialize(res, new JsonSerializerOptions { WriteIndented = false });
                 return MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(whole);
             }
