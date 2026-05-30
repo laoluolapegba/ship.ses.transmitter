@@ -1,6 +1,4 @@
 ﻿//using Google.Protobuf.WellKnownTypes;
-using System;
-using System.Collections.Generic;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -19,6 +17,9 @@ using Ship.Ses.Transmitter.Infrastructure.Persistance.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Security;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Worker;
+using System;
+using System.Collections.Generic;
+using System.Net;
 using static Org.BouncyCastle.Math.EC.ECCurve;
 
 var builder = Host.CreateApplicationBuilder(args);
@@ -77,10 +78,56 @@ fhirOptionsBuilder
     .Validate(opts => !string.IsNullOrWhiteSpace(opts.Default.BaseUrl), "FhirRouting:Default:BaseUrl is required")
     .ValidateOnStart();
 
+builder.Services.Configure<EmrCallbackOptions>(
+    builder.Configuration.GetSection("EmrCallback"));
+
 builder.Services.AddHttpClient("EmrCallback")
-    .ConfigureHttpClient(c =>
+    .ConfigureHttpClient((sp, client) =>
     {
-        c.Timeout = TimeSpan.FromSeconds(15);
+        var opt = sp.GetRequiredService<IOptions<EmrCallbackOptions>>().Value;
+        client.Timeout = TimeSpan.FromSeconds(opt.TimeoutSeconds);
+    })
+    .ConfigurePrimaryHttpMessageHandler(sp =>
+    {
+        var env = sp.GetRequiredService<IHostEnvironment>();
+        var opt = sp.GetRequiredService<IOptions<EmrCallbackOptions>>().Value;
+
+        var handler = new SocketsHttpHandler
+        {
+            // other hardening 
+        };
+
+        var proxyOpt = opt.Proxy ?? new ProxyOptions();
+
+        var useProxy =
+            proxyOpt.Enabled
+            && proxyOpt.HostEnvironments.Any(e =>
+                string.Equals(e, env.EnvironmentName, StringComparison.OrdinalIgnoreCase))
+            && !string.IsNullOrWhiteSpace(proxyOpt.Address);
+
+        if (!useProxy)
+            return handler;
+
+        var webProxy = new WebProxy(proxyOpt.Address!)
+        {
+            BypassProxyOnLocal = proxyOpt.BypassOnLocal
+        };
+
+        if (proxyOpt.BypassList?.Length > 0)
+            webProxy.BypassList = proxyOpt.BypassList;
+
+        // Proxy auth Auth:Type = None | Basic
+        if (string.Equals(proxyOpt.Auth?.Type, "Basic", StringComparison.OrdinalIgnoreCase))
+        {
+            webProxy.Credentials = new NetworkCredential(
+                proxyOpt.Auth.Username,
+                proxyOpt.Auth.Password);
+        }
+
+        handler.Proxy = webProxy;
+        handler.UseProxy = true;
+
+        return handler;
     });
 
 
@@ -124,8 +171,6 @@ if (seSClientOpts.UseShipAdminApi)
     builder.Services.AddSingleton<IHeartbeatClient, HttpHeartbeatClient>();
     
 
-    // IMPORTANT: Do NOT register ShipServerDbContext here if it was only used for admin reads/writes
-    // (Keep any other DB contexts that are used elsewhere)
     Log.Information("FeatureFlag: Using SHIP Admin API adapters (HTTP).");
 }
 else
