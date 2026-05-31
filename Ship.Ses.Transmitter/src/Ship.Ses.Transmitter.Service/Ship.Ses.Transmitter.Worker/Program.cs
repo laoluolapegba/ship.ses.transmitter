@@ -81,6 +81,9 @@ fhirOptionsBuilder
 builder.Services.Configure<EmrCallbackOptions>(
     builder.Configuration.GetSection("EmrCallback"));
 
+// EMR callback URL validation (SSRF guard; opt-in via EmrCallback:Validation:Enabled).
+builder.Services.AddSingleton<ICallbackUrlValidator, CallbackUrlValidator>();
+
 builder.Services.AddHttpClient("EmrCallback")
     .ConfigureHttpClient((sp, client) =>
     {
