@@ -1,0 +1,28 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+
+      # The solution references a WebApi project that is not in the repo, so we run the test
+      # projects directly rather than `dotnet test` on the .sln. Each test project pulls in the
+      # libraries it covers (Domain / Application / Infrastructure) transitively.
+      - name: Domain unit tests
+        run: dotnet test Ship.Ses.Transmitter/tests/Ship.Ses.Transmitter.Domain.UnitTests/Ship.Ses.Transmitter.Domain.UnitTests.csproj --nologo
+
+      - name: Application unit tests
+        run: dotnet test Ship.Ses.Transmitter/tests/Ship.Ses.Transmitter.Application.UnitTests/Ship.Ses.Transmitter.Application.UnitTests.csproj --nologo
+
+      - name: Infrastructure unit tests
+        run: dotnet test Ship.Ses.Transmitter/tests/Ship.Ses.Transmitter.Infrastructure.UnitTests/Ship.Ses.Transmitter.Infrastructure.UnitTests.csproj --nologo

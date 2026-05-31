@@ -46,6 +46,10 @@
 >   JSON payloads) in Application; `MongoSyncRepository` is now the Mongo **adapter**; `IMongoSyncRepository`
 >   deleted; `BaseMongoDocument.Id` → `string`; "claim" methods documented for Postgres
 >   `FOR UPDATE SKIP LOCKED`. All workers/services migrated (Findings 7.1–7.6).
+> - **2026-05-31 (Phase 0 close-out)** — Test coverage completed: `FhirApiServiceTests` (outbound
+>   routing/auth-header/scope/enveloping/error-mapping — Findings 2.5, 4.1, 4.2, 4.4), Application
+>   `ClientCredentialContractTests` + `FhirApiResponseMappingTests` (DTO mapping), and a CI `dotnet test`
+>   gate (`.github/workflows/tests.yml`). Suite: 3 Domain + 9 Application + 54 Infrastructure green.
 
 ---
 

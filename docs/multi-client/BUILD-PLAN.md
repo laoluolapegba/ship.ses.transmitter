@@ -30,14 +30,24 @@ solution but empty.
 - [x] `tests/Ship.Ses.Transmitter.Infrastructure.UnitTests` — `FhirRoutingSettingsTests`
       (`ResolveRoute` by service name, by resource, fallback to Default, blank-resource throws) and
       `FhirSyncServiceTests` (success/fail bookkeeping; pins the Finding 3.6 fix). Uses Moq. *(2026-05-30)*
-- [ ] Flesh out `tests/Ship.Ses.Transmitter.Application.UnitTests` — interface contracts / DTO mapping.
-- [ ] `TokenService` tests (mock `HttpMessageHandler`), `FhirApiService` routing + auth header tests.
-- [ ] Add a shared test project for fakes (`HttpMessageHandler` stub, in-memory stores). Add a CI
-      `dotnet test` gate.
-- [ ] Add more **characterization tests** that assert today's single-client behaviour so the refactor is observable.
+- [x] Flesh out `tests/Ship.Ses.Transmitter.Application.UnitTests` — `ClientCredentialContractTests`
+      (per-client credential material, scope excluded, default grant type, value equality) and
+      `FhirApiResponseMappingTests` (SHIP-response DTO mapping incl. `FlexibleBundleConverter` tolerance). *(2026-05-31)*
+- [x] `FhirApiService` routing + auth-header tests (`FhirApiServiceTests`, `CountingHttpMessageHandler`
+      mock): bearer resolved per `record.ClientId`, route-derived scope (+ `AuthSettings` fallback),
+      Default vs PDS path shapes, Bundle routing, payload enveloping, HTTP-error → `FhirApiResponse`
+      mapping, missing-BaseUrl guard. Token-service caching/single-flight already covered by
+      `CachedFhirTokenServiceTests` (the single-identity `TokenService` was deleted in Phase 3). *(2026-05-31)*
+- [x] CI `dotnet test` gate (`.github/workflows/tests.yml`) — runs the three test projects directly
+      (the .sln references a WebApi project absent from this repo). *(2026-05-31)*
+- [ ] Add a shared test project for fakes (`HttpMessageHandler` stub, in-memory stores). *(deferred — fakes
+      live in `Infrastructure.UnitTests/Fakes` for now; promote when the Worker integration-test project lands.)*
+- [x] Added **characterization tests** that pin today's outbound behaviour (FhirApiService routing/auth +
+      response parsing) so the refactor stays observable. *(2026-05-31)*
 
-**Exit:** `dotnet test` runs with meaningful coverage of routing, token, and processing paths.
-**Status:** ⏳ in progress — routing + processing covered; token/HTTP + Application coverage remain.
+**Exit:** ✅ `dotnet test` runs with meaningful coverage of routing, token, processing, **outbound HTTP**,
+and **response-mapping** paths (3 Domain + 9 Application + 54 Infrastructure green), gated in CI.
+**Status:** ✅ done — only the shared-fakes project remains (deferred until the integration-test project).
 
 ---
 
