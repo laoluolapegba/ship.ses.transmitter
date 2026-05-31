@@ -1,6 +1,7 @@
-﻿using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
 using Ship.Ses.Transmitter.Infrastructure.Settings;
@@ -13,18 +14,16 @@ using System.Threading.Tasks;
 namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 {
     /// <summary>
-    /// Generic repository for interacting with MongoDB synchronization records.
+    /// MongoDB adapter for <see cref="IFhirSyncStore"/>. All MongoDB specifics (ObjectId representation,
+    /// BsonDocument payloads, collection-per-resource) are confined to this class; callers see only the
+    /// storage-neutral contract. A PostgreSQL adapter can replace this without touching workers/services.
     /// </summary>
-    public class MongoSyncRepository : IMongoSyncRepository
+    public class MongoSyncRepository : IFhirSyncStore
     {
         private readonly IMongoDatabase _database;
         private IMongoCollection<StatusEvent> StatusEventCol =>
-        _database.GetCollection<StatusEvent>("fhirstatusevents");
-        /// <summary>
-        /// Initializes a new instance of the <see cref="MongoSyncRepository"/> class.
-        /// </summary>
-        /// <param name="settings">The database settings from configuration.</param>
-        /// <param name="client">The MongoDB client.</param>
+            _database.GetCollection<StatusEvent>("fhirstatusevents");
+
         public MongoSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
         {
             if (settings == null || string.IsNullOrWhiteSpace(settings.Value.DatabaseName))
@@ -34,16 +33,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             _database = client.GetDatabase(settings.Value.DatabaseName);
         }
 
-        //public MongoSyncRepository(IOptions<SourceDbSettings> settings, IMongoClient client)
-        //{
-        //    _database = client.GetDatabase(settings.Value.DatabaseName);
-        //}
-
         public async Task<IEnumerable<T>> GetPendingRecordsAsync<T>() where T : FhirSyncRecord, new()
         {
-            var collectionName = new T().CollectionName;
-            var collection = _database.GetCollection<T>(collectionName);
-
+            var collection = _database.GetCollection<T>(new T().CollectionName);
             var filter = Builders<T>.Filter.Eq(r => r.Status, "Pending");
             return await collection.Find(filter).ToListAsync();
         }
@@ -60,8 +52,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             var filter = Builders<T>.Filter.Eq(r => r.Id, record.Id);
             await collection.ReplaceOneAsync(filter, record);
         }
+
         public async Task<IEnumerable<T>> GetByStatusAsync<T>(string status, int skip = 0, int take = 100)
-    where T : FhirSyncRecord, new()
+            where T : FhirSyncRecord, new()
         {
             var collection = _database.GetCollection<T>(new T().CollectionName);
             var filter = Builders<T>.Filter.Eq(r => r.Status, status);
@@ -71,35 +64,32 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                 .ToListAsync();
         }
 
-        public async Task BulkUpdateStatusAsync<T>(
-    Dictionary<ObjectId, (string status, string message, string transactionId, string rawResponse)> updates
-) where T : FhirSyncRecord, new()
+        public async Task BulkUpdateStatusAsync<T>(IReadOnlyDictionary<string, RecordStatusUpdate> updates)
+            where T : FhirSyncRecord, new()
         {
             var collection = _database.GetCollection<T>(new T().CollectionName);
 
             var models = updates.Select(kv =>
             {
-                var filter = Builders<T>.Filter.Eq(r => r.Id, kv.Key.ToString());
+                var filter = Builders<T>.Filter.Eq(r => r.Id, kv.Key);
+                var v = kv.Value;
                 var update = Builders<T>.Update
-                    .Set(r => r.Status, kv.Value.status)
-                    .Set(r => r.ErrorMessage, kv.Value.message)
+                    .Set(r => r.Status, v.Status)
+                    .Set(r => r.ErrorMessage, v.Message)
                     .Set(r => r.TimeSynced, DateTime.UtcNow)
-                    .Set(r => r.TransactionId, kv.Value.transactionId)
-                    .Set(r => r.ApiResponsePayload, kv.Value.rawResponse)
+                    .Set(r => r.TransactionId, v.TransactionId)
+                    .Set(r => r.ApiResponsePayload, v.RawResponse)
                     .Set(r => r.LastAttemptAt, DateTime.UtcNow);
+
+                // Track attempts on failure (Finding 3.5). Dead-letter requeue remains a future enhancement.
+                if (string.Equals(v.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+                    update = update.Inc(r => r.RetryCount, 1);
 
                 return new UpdateOneModel<T>(filter, update);
             });
 
             await collection.BulkWriteAsync(models);
         }
-
-        /// <summary>
-        /// Find the originating patient record by transaction id
-        /// </summary>
-        /// <param name="transactionId"></param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
 
         public async Task<PatientSyncRecord?> GetPatientByTransactionIdAsync(string transactionId, CancellationToken ct = default)
         {
@@ -108,12 +98,11 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return await col.Find(filter).FirstOrDefaultAsync(ct);
         }
 
-        /// <summary>
-        /// Fetch due events from patientstatusevents
-        /// </summary>
-        /// <param name="batchSize"></param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
+        public Task InsertStatusEventAsync(StatusEvent ev, CancellationToken ct = default)
+            => StatusEventCol.InsertOneAsync(ev, cancellationToken: ct);
+
+        // ── EMR callback delivery ──
+
         public async Task<List<StatusEvent>> FetchDueEmrCallbacksAsync(int batchSize, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
@@ -121,6 +110,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 
             var filter = Builders<StatusEvent>.Filter.And(
                 Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Succeeded"),
+                Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Failed"),
                 Builders<StatusEvent>.Filter.Eq(x => x.Status, "SUCCESS"),
                 Builders<StatusEvent>.Filter.Lte(x => x.CallbackNextAttemptAt, now)
             );
@@ -131,13 +121,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                             .ToListAsync(ct);
         }
 
-        /// <summary>
-        /// Try to atomically mark as InFlight (claim)
-        /// </summary>
-        /// <param name="id"></param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        public async Task<bool> TryMarkInFlightAsync(ObjectId id, CancellationToken ct = default)
+        public async Task<bool> TryClaimEmrCallbackAsync(string id, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var now = DateTime.UtcNow;
@@ -157,16 +141,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return res.ModifiedCount == 1;
         }
 
-        /// <summary>
-        /// Mark delivery success
-        /// </summary>
-        /// <param name="id"></param>
-        /// <param name="statusCode"></param>
-        /// <param name="body"></param>
-        /// <param name="targetUrl"></param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        public async Task MarkEmrCallbackSucceededAsync(ObjectId id, int statusCode, string? body, string? targetUrl, CancellationToken ct = default)
+        public async Task MarkEmrCallbackSucceededAsync(string id, int statusCode, string? body, string? targetUrl, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var update = Builders<StatusEvent>.Update
@@ -178,16 +153,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
         }
 
-        /// <summary>
-        /// Mark for retry with backoff
-        /// </summary>
-        /// <param name="id"></param>
-        /// <param name="error"></param>
-        /// <param name="delay"></param>
-        /// <param name="targetUrl"></param>
-        /// <param name="ct"></param>
-        /// <returns></returns>
-        public async Task MarkEmrCallbackRetryAsync(ObjectId id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default)
+        public async Task MarkEmrCallbackRetryAsync(string id, string? error, TimeSpan delay, string? targetUrl, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var update = Builders<StatusEvent>.Update
@@ -199,13 +165,22 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
         }
 
-        /// <summary>
-        /// Find status events that are still PENDING (i.e., we posted to SHIP)
-        /// and are older than the timeout, and whose probe window is due.
-        /// We only probe items that have not yet transitioned to SUCCESS/FAILED by callback.
-        /// </summary>
-        public async Task<List<StatusEvent>> FetchDueStatusProbesAsync(
-            TimeSpan age, int batchSize, CancellationToken ct = default)
+        /// <summary>Dead-letter a callback: mark Failed and stop polling (CallbackNextAttemptAt = null).</summary>
+        public async Task MarkEmrCallbackFailedAsync(string id, string? error, string? targetUrl, CancellationToken ct = default)
+        {
+            var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
+            var update = Builders<StatusEvent>.Update
+                .Inc(x => x.CallbackAttempts, 1)
+                .Set(x => x.CallbackStatus, "Failed")
+                .Set(x => x.CallbackLastError, Truncate(error, 2000))
+                .Set(x => x.CallbackNextAttemptAt, (DateTime?)null)
+                .Set(x => x.EmrTargetUrl, targetUrl);
+            await col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
+        }
+
+        // ── Status probing ──
+
+        public async Task<List<StatusEvent>> FetchDueStatusProbesAsync(TimeSpan age, int batchSize, CancellationToken ct = default)
         {
             var now = DateTime.UtcNow;
             var olderThan = now - age;
@@ -224,8 +199,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                 .ToListAsync(ct);
         }
 
-        /// <summary>Atomic claim to avoid double processing.</summary>
-        public async Task<bool> TryMarkProbeInFlightAsync(ObjectId id, CancellationToken ct = default)
+        public async Task<bool> TryClaimStatusProbeAsync(string id, CancellationToken ct = default)
         {
             var now = DateTime.UtcNow;
             var filter = Builders<StatusEvent>.Filter.And(
@@ -244,8 +218,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return res.ModifiedCount == 1;
         }
 
-        /// <summary>Mark probe success; usually paired with writing a new StatusEvent with the payload.</summary>
-        public Task MarkProbeSucceededAsync(ObjectId id, CancellationToken ct = default)
+        public Task MarkProbeSucceededAsync(string id, CancellationToken ct = default)
         {
             var update = Builders<StatusEvent>.Update
                 .Set(x => x.ProbeStatus, "Succeeded")
@@ -253,8 +226,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return StatusEventCol.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
         }
 
-        /// <summary>Retry with backoff or abandon.</summary>
-        public Task MarkProbeRetryAsync(ObjectId id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default)
+        public Task MarkProbeRetryAsync(string id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default)
         {
             var upd = Builders<StatusEvent>.Update
                 .Set(x => x.ProbeStatus, abandon ? "Abandoned" : "Pending")
@@ -264,17 +236,17 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
 
             return StatusEventCol.UpdateOneAsync(x => x.Id == id, upd, cancellationToken: ct);
         }
-        public Task InsertStatusEventAsync(StatusEvent ev, CancellationToken ct = default)
-        => StatusEventCol.InsertOneAsync(ev, cancellationToken: ct);
-        private static string? Truncate(string? s, int max) =>
-            string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
-        public Task MarkProbeSuccessAndAttachPayloadAsync(
-    ObjectId id,
-    string message,
-    BsonDocument? payload,
-    CancellationToken ct = default)
+
+        public Task MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
+
+            BsonDocument? payload = null;
+            if (!string.IsNullOrWhiteSpace(payloadJson))
+            {
+                try { payload = BsonDocument.Parse(payloadJson); }
+                catch { payload = null; }
+            }
 
             var update = Builders<StatusEvent>.Update
                 .Set(x => x.Status, "SUCCESS")
@@ -288,6 +260,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return col.UpdateOneAsync(x => x.Id == id, update, cancellationToken: ct);
         }
 
-
+        private static string? Truncate(string? s, int max) =>
+            string.IsNullOrEmpty(s) ? s : (s.Length <= max ? s : s.Substring(0, max));
     }
 }

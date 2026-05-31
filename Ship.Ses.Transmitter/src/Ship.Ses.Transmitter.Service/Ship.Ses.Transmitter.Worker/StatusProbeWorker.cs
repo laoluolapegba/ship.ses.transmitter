@@ -8,6 +8,7 @@ namespace Ship.Ses.Transmitter.Worker
 {
     using Microsoft.Extensions.Options;
     using MongoDB.Bson;
+    using Ship.Ses.Transmitter.Application.Interfaces;
     using Ship.Ses.Transmitter.Application.Sync;
     using Ship.Ses.Transmitter.Domain.Enums;
     using Ship.Ses.Transmitter.Domain.Patients;
@@ -58,11 +59,11 @@ namespace Ship.Ses.Transmitter.Worker
 
             while (!stoppingToken.IsCancellationRequested)
             {
-                IMongoSyncRepository? repo = null;
+                IFhirSyncStore? repo = null;
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    repo = scope.ServiceProvider.GetRequiredService<IMongoSyncRepository>();
+                    repo = scope.ServiceProvider.GetRequiredService<IFhirSyncStore>();
 
                     var candidates = await repo.FetchDueStatusProbesAsync(age, _opt.BatchSize, stoppingToken);
 
@@ -79,7 +80,7 @@ namespace Ship.Ses.Transmitter.Worker
                     foreach (var ev in candidates)
                     {
                         // Use the scoped 'repo'
-                        if (!await repo.TryMarkProbeInFlightAsync(ev.Id, stoppingToken))
+                        if (!await repo.TryClaimStatusProbeAsync(ev.Id, stoppingToken))
                             continue;
                         await ProbeOneAsync(ev, repo, stoppingToken);
                     }
@@ -94,18 +95,18 @@ namespace Ship.Ses.Transmitter.Worker
             }
         }
 
-        private async Task ProbeOneAsync(StatusEvent ev, IMongoSyncRepository repo, CancellationToken ct)
+        private async Task ProbeOneAsync(StatusEvent ev, IFhirSyncStore repo, CancellationToken ct)
         {
             var attempt = ev.ProbeAttempts + 1;
 
             try
             {
-                if (string.IsNullOrWhiteSpace(ev.ResourceType) || string.IsNullOrWhiteSpace(ev.ResourceId))
+                if (string.IsNullOrWhiteSpace(ev.ResourceType) || string.IsNullOrWhiteSpace(ev.ResourceId) || string.IsNullOrWhiteSpace(ev.ClientId))
                 {
-                    _logger.LogWarning("⚠️ Probe skipped: missing ResourceType/ResourceId for transactionId={TransactionId}",
+                    _logger.LogWarning("⚠️ Probe skipped: missing ResourceType/ResourceId/ClientId for transactionId={TransactionId}",
                         ev.TransactionId);
                     // Use the passed-in scoped 'repo'
-                    await repo.MarkProbeRetryAsync(ev.Id, "Missing resource identifiers", TimeSpan.FromMinutes(5), abandon: true, ct);
+                    await repo.MarkProbeRetryAsync(ev.Id, "Missing resource/client identifiers", TimeSpan.FromMinutes(5), abandon: true, ct);
                     return;
                 }
 
@@ -116,6 +117,7 @@ namespace Ship.Ses.Transmitter.Worker
                 // call FHIR API to get the resource
                 var res = await _fhir.SendAsync(
                     FhirOperation.Get,
+                    clientId: ev.ClientId,
                     resourceType: ev.ResourceType,
                     resourceId: ev.TransactionId,
                     shipService: ev.ShipService,
@@ -124,13 +126,13 @@ namespace Ship.Ses.Transmitter.Worker
                 // Handle the two types of api responses:
                 if (res.Code == 200 && string.Equals(res.Status, "SUCCESS", StringComparison.OrdinalIgnoreCase))
                 {
-                    var payload = TryMakeBsonPayload(res);
+                    var payloadJson = TryMakeJsonPayload(res);
 
-                    // ✅ Update the existing PENDING event to SUCCESS and attach payload
+                    // ✅ Update the existing PENDING event to SUCCESS and attach payload (JSON; adapter converts)
                     await repo.MarkProbeSuccessAndAttachPayloadAsync(
                         ev.Id,
                         "Resource details processed successfully (probe)",
-                        payload,
+                        payloadJson,
                         ct);
 
                     _logger.LogInformation(
@@ -158,7 +160,7 @@ namespace Ship.Ses.Transmitter.Worker
                 await RetryOrAbandonAsync(ev, repo, ex.Message, attempt, ct, ex);
             }
         }
-        private async Task RetryOrAbandonAsync(StatusEvent ev, IMongoSyncRepository repo, string? error, int attempt, CancellationToken ct, Exception? ex = null)
+        private async Task RetryOrAbandonAsync(StatusEvent ev, IFhirSyncStore repo, string? error, int attempt, CancellationToken ct, Exception? ex = null)
         {
             var abandon = attempt >= _opt.MaxAttempts;
             var delay = TimeSpan.FromSeconds(Math.Min(60, 5 * attempt)); // simple linear backoff capped @60s
@@ -183,39 +185,20 @@ namespace Ship.Ses.Transmitter.Worker
         }
 
         /// <summary>
-        /// Tries to capture a BSON document for StatusEvent.Data.
-        /// Prefers a 'Raw' JSON string property if present on the response; falls back to 'Data' if present;
-        /// otherwise serializes the entire response as a last resort.
-        /// This keeps the worker self-contained without forcing changes to FhirApiResponse.
+        /// Captures a JSON payload string for the StatusEvent. Prefers the raw response body; falls back
+        /// to the parsed Data, then the whole response. The store adapter converts JSON → its native form.
         /// </summary>
-        private static BsonDocument? TryMakeBsonPayload(FhirApiResponse res)
+        private static string? TryMakeJsonPayload(FhirApiResponse res)
         {
             try
             {
-                // Raw JSON (if the FhirApiService added it)
-                var rawProp = res.GetType().GetProperty("Raw");
-                if (rawProp != null)
-                {
-                    var raw = rawProp.GetValue(res) as string;
-                    if (!string.IsNullOrWhiteSpace(raw))
-                        return MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(raw);
-                }
+                if (!string.IsNullOrWhiteSpace(res.Raw))
+                    return res.Raw;
 
-                // Data property (JsonElement or arbitrary object)
-                var dataProp = res.GetType().GetProperty("Data");
-                if (dataProp != null)
-                {
-                    var dataVal = dataProp.GetValue(res);
-                    if (dataVal != null)
-                    {
-                        var json = JsonSerializer.Serialize(dataVal, new JsonSerializerOptions { WriteIndented = false });
-                        return MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(json);
-                    }
-                }
+                if (res.Data != null)
+                    return JsonSerializer.Serialize(res.Data, new JsonSerializerOptions { WriteIndented = false });
 
-                // Fallback: serialize whole response (ensures we persist *something*)
-                var whole = JsonSerializer.Serialize(res, new JsonSerializerOptions { WriteIndented = false });
-                return MongoDB.Bson.Serialization.BsonSerializer.Deserialize<BsonDocument>(whole);
+                return JsonSerializer.Serialize(res, new JsonSerializerOptions { WriteIndented = false });
             }
             catch
             {

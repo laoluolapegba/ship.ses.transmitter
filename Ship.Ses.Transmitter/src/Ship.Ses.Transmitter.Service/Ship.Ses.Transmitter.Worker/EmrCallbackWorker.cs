@@ -1,6 +1,10 @@
-﻿using MongoDB.Bson;
+﻿using Microsoft.Extensions.Options;
+using MongoDB.Bson;
+using Ship.Ses.Transmitter.Application.Interfaces;
 using Ship.Ses.Transmitter.Domain.Patients;
 using Ship.Ses.Transmitter.Domain.Sync;
+using Ship.Ses.Transmitter.Infrastructure.Http;
+using Ship.Ses.Transmitter.Infrastructure.Settings;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -26,15 +30,21 @@ namespace Ship.Ses.Transmitter.Worker
         private readonly ILogger<EmrCallbackWorker> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly ICallbackUrlValidator _validator;
+        private readonly int _maxAttempts;
 
         public EmrCallbackWorker(
             ILogger<EmrCallbackWorker> logger,
             IHttpClientFactory httpClientFactory,
-            IServiceScopeFactory scopeFactory)
+            IServiceScopeFactory scopeFactory,
+            ICallbackUrlValidator validator,
+            IOptions<EmrCallbackOptions> options)
         {
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _scopeFactory = scopeFactory;
+            _validator = validator;
+            _maxAttempts = Math.Max(1, options.Value?.MaxAttempts ?? 8);
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -51,7 +61,7 @@ namespace Ship.Ses.Transmitter.Worker
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var repo = scope.ServiceProvider.GetRequiredService<IMongoSyncRepository>();
+                    var repo = scope.ServiceProvider.GetRequiredService<IFhirSyncStore>();
 
                     _logger.LogInformation("🔎 Polling for due EMR callbacks…");
 
@@ -75,7 +85,7 @@ namespace Ship.Ses.Transmitter.Worker
                         if (stoppingToken.IsCancellationRequested) break;
 
                         // Mark in-flight (skip if someone else took it)
-                        if (!await repo.TryMarkInFlightAsync(evt.Id, stoppingToken))
+                        if (!await repo.TryClaimEmrCallbackAsync(evt.Id, stoppingToken))
                         {
                             _logger.LogDebug("⏭️ Skipped: could not mark in-flight (id={Id}, tx={Tx}, corr={Corr})",
                                 evt.Id, evt.TransactionId, evt.CorrelationId);
@@ -84,25 +94,27 @@ namespace Ship.Ses.Transmitter.Worker
 
                         // Resolve target URL
                         var targetUrl = await ResolveTargetUrlAsync(repo, evt, stoppingToken);
-                        if (string.IsNullOrWhiteSpace(targetUrl))
-                        {
-                            _logger.LogWarning("❗ Missing EMR callback URL (tx={Tx}, corr={Corr}). Scheduling retry…",
-                                evt.TransactionId, evt.CorrelationId);
 
-                            await repo.MarkEmrCallbackRetryAsync(
-                                evt.Id,
-                                "Missing EMR callback URL",
-                                delay: TimeSpan.FromMinutes(10),
-                                targetUrl: null,
-                                stoppingToken);
+                        // Validate the (stored) callback URL before calling out (SSRF guard, opt-in — Finding 5.1).
+                        if (!_validator.IsAllowed(targetUrl, evt.ClientId, out var rejectReason))
+                        {
+                            _logger.LogWarning("⛔ Callback URL rejected (tx={Tx}, corr={Corr}, client={Client}): {Reason}",
+                                evt.TransactionId, evt.CorrelationId, evt.ClientId, rejectReason);
+
+                            // A missing URL may be backfilled later → retry up to MaxAttempts; a present but
+                            // disallowed URL will never become valid → dead-letter immediately.
+                            if (string.IsNullOrWhiteSpace(targetUrl) && evt.CallbackAttempts + 1 < _maxAttempts)
+                                await repo.MarkEmrCallbackRetryAsync(evt.Id, rejectReason, TimeSpan.FromMinutes(10), null, stoppingToken);
+                            else
+                                await repo.MarkEmrCallbackFailedAsync(evt.Id, rejectReason, targetUrl, stoppingToken);
 
                             continue;
                         }
 
                         _logger.LogInformation("🚚 Dispatching EMR callback (tx={Tx}, corr={Corr}) → {Url}",
-                            evt.TransactionId, evt.CorrelationId, SafeUrl(targetUrl));
+                            evt.TransactionId, evt.CorrelationId, SafeUrl(targetUrl!));
 
-                        await SendToEmrAsync(repo, evt, targetUrl, stoppingToken);
+                        await SendToEmrAsync(repo, evt, targetUrl!, stoppingToken);
                     }
                 }
                 catch (TaskCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -125,7 +137,7 @@ namespace Ship.Ses.Transmitter.Worker
         }
 
 
-        private async Task<string?> ResolveTargetUrlAsync(IMongoSyncRepository repo, StatusEvent evt, CancellationToken ct)
+        private async Task<string?> ResolveTargetUrlAsync(IFhirSyncStore repo, StatusEvent evt, CancellationToken ct)
         {
             if (!string.IsNullOrEmpty(evt.EmrTargetUrl))
                 return evt.EmrTargetUrl;
@@ -134,7 +146,7 @@ namespace Ship.Ses.Transmitter.Worker
             return patient?.ClientEMRCallbackUrl;
         }
 
-        private async Task SendToEmrAsync(IMongoSyncRepository repo, StatusEvent evt, string targetUrl, CancellationToken ct)
+        private async Task SendToEmrAsync(IFhirSyncStore repo, StatusEvent evt, string targetUrl, CancellationToken ct)
         {
             var client = _httpClientFactory.CreateClient("EmrCallback");
             var payload = BuildEmrPayload(evt);
@@ -162,6 +174,8 @@ namespace Ship.Ses.Transmitter.Worker
 
                 //  correlation headers for the EMR
                 req.Headers.TryAddWithoutValidation("x-transaction-id", evt.TransactionId);
+                if (!string.IsNullOrWhiteSpace(evt.ClientId))
+                    req.Headers.TryAddWithoutValidation("x-client-id", evt.ClientId);
                 if (!string.IsNullOrWhiteSpace(evt.CorrelationId))
                     req.Headers.TryAddWithoutValidation("x-correlation-id", evt.CorrelationId);
                 if (!string.IsNullOrWhiteSpace(evt.ResourceType))
@@ -179,12 +193,7 @@ namespace Ship.Ses.Transmitter.Worker
                 }
                 else
                 {
-                    await repo.MarkEmrCallbackRetryAsync(
-                        evt.Id,
-                        $"HTTP {(int)resp.StatusCode}: {Trim(body)}",
-                        delay: Backoff(evt.CallbackAttempts),
-                        targetUrl,
-                        ct);
+                    await RetryOrDeadLetterAsync(repo, evt, $"HTTP {(int)resp.StatusCode}: {Trim(body)}", targetUrl, ct);
 
                     _logger.LogWarning(
                         "⚠️ EMR callback failed HTTP {Code} (tx={Tx}, corr={Corr})",
@@ -193,9 +202,22 @@ namespace Ship.Ses.Transmitter.Worker
             }
             catch (Exception ex)
             {
-                await repo.MarkEmrCallbackRetryAsync(evt.Id, ex.Message, Backoff(evt.CallbackAttempts), targetUrl, ct);
+                await RetryOrDeadLetterAsync(repo, evt, ex.Message, targetUrl, ct);
                 _logger.LogError(ex, "❌ EMR callback exception (tx={Tx}, corr={Corr})", evt.TransactionId, evt.CorrelationId);
             }
+        }
+
+        // Retry with backoff, or dead-letter once MaxAttempts is reached (Finding 5.4).
+        private Task RetryOrDeadLetterAsync(IFhirSyncStore repo, StatusEvent evt, string? error, string targetUrl, CancellationToken ct)
+        {
+            if (evt.CallbackAttempts + 1 >= _maxAttempts)
+            {
+                _logger.LogError("⛔ EMR callback dead-lettered after {Attempts} attempt(s) (tx={Tx}, corr={Corr}): {Error}",
+                    evt.CallbackAttempts + 1, evt.TransactionId, evt.CorrelationId, error);
+                return repo.MarkEmrCallbackFailedAsync(evt.Id, error, targetUrl, ct);
+            }
+
+            return repo.MarkEmrCallbackRetryAsync(evt.Id, error, Backoff(evt.CallbackAttempts), targetUrl, ct);
         }
 
         private static string SafeUrl(string url)

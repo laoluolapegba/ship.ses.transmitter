@@ -18,11 +18,11 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance
 {
     public class FhirIngestService : IFhirIngestService
     {
-        private readonly IMongoSyncRepository _mongoSyncRepository;
+        private readonly IFhirSyncStore _mongoSyncRepository;
         private readonly ILogger<FhirIngestService> _logger;
         private readonly IClientSyncConfigProvider _clientConfig;
         private const string ExtractSourceApi = "API";
-        public FhirIngestService(IMongoSyncRepository mongoSyncRepository, IOptions<SourceDbSettings> options, 
+        public FhirIngestService(IFhirSyncStore mongoSyncRepository, IOptions<SourceDbSettings> options,
             ILogger<FhirIngestService> logger,
             IClientSyncConfigProvider clientConfig)
         {

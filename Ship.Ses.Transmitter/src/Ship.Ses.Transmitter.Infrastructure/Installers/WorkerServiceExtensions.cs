@@ -61,7 +61,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             });
 
             //  Register Repositories & Services
-            services.AddScoped<IMongoSyncRepository, MongoSyncRepository>();
+            services.AddScoped<IFhirSyncStore, MongoSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 
             //services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
@@ -73,14 +73,40 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
                 var msSqlSettings = appSettings.ShipServerSqlDb;
             }
             services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
-            services.AddHttpClient<TokenService>();
-            services.AddSingleton<TokenService>();
             services.AddSingleton<AdminTokenService>();
+
+            // Multi-client outbound auth: credential resolved per clientId, token cached per (clientId, scope).
+            services.AddHttpClient("FhirTokens");
+            services.AddSingleton<IFhirTokenService, CachedFhirTokenService>();
+
+            // Credential source is feature-flagged (ClientCredentials:Source = "Config" | "Vault").
+            //   Config = single-client fallback via AuthSettings (default; supersedes the old TokenService).
+            //   Vault  = per-client secret read from secret/ses/clients/{clientId}/hmac.
+            services.Configure<ClientCredentialsOptions>(configuration.GetSection("ClientCredentials"));
+            var credOptions = configuration.GetSection("ClientCredentials").Get<ClientCredentialsOptions>() ?? new ClientCredentialsOptions();
+            if (string.Equals(credOptions.Source, "Vault", StringComparison.OrdinalIgnoreCase))
+            {
+                services.AddHttpClient("Vault", (sp, client) =>
+                {
+                    var v = sp.GetRequiredService<IOptions<ClientCredentialsOptions>>().Value.Vault;
+                    if (!string.IsNullOrWhiteSpace(v.Address))
+                        client.BaseAddress = new Uri(v.Address);
+                    client.Timeout = TimeSpan.FromSeconds(v.RequestTimeoutSeconds > 0 ? v.RequestTimeoutSeconds : 10);
+                });
+                services.AddSingleton<IVaultSecretReader, HttpVaultSecretReader>();
+                services.AddSingleton<IClientCredentialProvider, VaultClientCredentialProvider>();
+                Console.WriteLine("ClientCredentials: using Vault provider.");
+            }
+            else
+            {
+                services.AddSingleton<IClientCredentialProvider, ConfigClientCredentialProvider>();
+                Console.WriteLine("ClientCredentials: using Config (single-client) provider.");
+            }
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 
             var sesSetting = configuration.GetSection("SeSClient");
-            Console.WriteLine($"  ClientId: {sesSetting["ClientId"]}");
+            Console.WriteLine($"  TenantId: {sesSetting["TenantId"] ?? sesSetting["ClientId"]}");
 
             static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() =>
     HttpPolicyExtensions
