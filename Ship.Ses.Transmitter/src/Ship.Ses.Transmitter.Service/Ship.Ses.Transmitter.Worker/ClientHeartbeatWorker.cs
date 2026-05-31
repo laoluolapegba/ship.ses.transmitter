@@ -29,7 +29,7 @@ namespace Ship.Ses.Transmitter.Worker
             _apiOpts = apiOpts.Value;
 
             var o = clientOpts.Value ?? throw new ArgumentNullException(nameof(clientOpts));
-            _clientId = o.ClientId ?? throw new ArgumentNullException(nameof(o.ClientId));
+            _clientId = o.EffectiveTenantId ?? throw new ArgumentNullException(nameof(o.TenantId), "SeSClient:TenantId (or legacy ClientId) is required.");
             _useShipAdminApi = o.UseShipAdminApi;
         }
 

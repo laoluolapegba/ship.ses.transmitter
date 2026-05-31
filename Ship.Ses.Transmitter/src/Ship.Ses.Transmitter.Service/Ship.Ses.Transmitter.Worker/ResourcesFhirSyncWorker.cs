@@ -46,7 +46,7 @@ namespace Ship.Ses.Transmitter.Worker
             _writer = writer ?? throw new ArgumentNullException(nameof(writer));
 
             var opts = clientOptions?.Value ?? throw new ArgumentNullException(nameof(clientOptions));
-            _clientId = opts.ClientId ?? throw new ArgumentNullException(nameof(opts.ClientId));
+            _clientId = opts.EffectiveTenantId ?? throw new ArgumentNullException(nameof(opts.TenantId), "SeSClient:TenantId (or legacy ClientId) is required.");
 
             _logger.LogInformation("ResourcesFhirSyncWorker starting with mode: {Mode}",
                 opts.UseShipAdminApi ? "AdminAPI" : "DirectDB");
