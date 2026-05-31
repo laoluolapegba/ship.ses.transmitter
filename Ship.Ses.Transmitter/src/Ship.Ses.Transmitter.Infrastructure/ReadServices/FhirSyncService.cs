@@ -40,6 +40,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         // client's records for the current batch (other clients are unaffected).
         private const int ClientBreakerThreshold = 3;
 
+        // Total send attempts a record gets before it is permanently Failed. Until then a failed
+        // attempt is requeued (left Pending) for the next cycle. (Finding 3.5 — bounded retry.)
+        private const int MaxSendAttempts = 3;
+
         private readonly IFhirSyncStore _repository;
         private readonly ILogger<FhirSyncService> _logger;
         private readonly IFhirApiService _fhirApiService;
@@ -80,21 +84,64 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                 _logger.LogDebug("Pending {Type} sample IDs: {Ids}", logResourceName,
                     records.Take(5).Select(r => r.ResourceId).ToArray());
 
-            //Accumulators (keyed by record id; storage-neutral)
-            var successUpdates = new Dictionary<string, RecordStatusUpdate>();
-            var failedUpdates = new Dictionary<string, RecordStatusUpdate>();
+            //Accumulators (keyed by record id; storage-neutral). One combined map: the adapter applies
+            // whatever Status each update carries (Synced / Pending-requeue / permanent Failed).
+            var updates = new Dictionary<string, RecordStatusUpdate>();
             var marksToSubmit = new List<StagingTransmissionMark>();
             var marksToFail = new List<long>();
+            var failedIds = new List<string>();
+            var synced = 0;
+            var requeued = 0;
+            var failed = 0;
 
-            // Process records grouped by client so one client's outage cannot block others.
-            foreach (var clientGroup in records.GroupBy(r => r.ClientId ?? string.Empty))
+            // Records a failed send attempt: requeue (leave Pending) until the attempt cap, then
+            // permanently Fail. RetryCount is incremented on every attempt via IncrementRetry. (Finding 3.5)
+            async Task RecordFailedAttemptAsync(FhirSyncRecord record, string message, string? txn, string raw, bool seedErrorOnPermanent)
             {
-                var groupClientId = clientGroup.Key;
-                var consecutiveErrors = 0;
-                var breakerOpen = false;
-
-                foreach (var record in clientGroup)
+                var attempts = record.RetryCount + 1;
+                if (attempts >= MaxSendAttempts)
                 {
+                    updates[record.Id] = new RecordStatusUpdate("Failed", message, txn ?? string.Empty, raw, IncrementRetry: true);
+                    if (record.StagingId.HasValue)
+                        marksToFail.Add(record.StagingId.Value);
+                    failed++;
+                    failedIds.Add(record.Id);
+
+                    if (seedErrorOnPermanent)
+                        await TrySeedErrorAsync(record, token, message: message);
+
+                    _logger.LogWarning("❌ ResourceId={ResourceId} permanently FAILED after {Attempts} attempt(s): {Message}",
+                        record.ResourceId, attempts, message);
+                }
+                else
+                {
+                    updates[record.Id] = new RecordStatusUpdate("Pending", message, txn ?? string.Empty, raw, IncrementRetry: true);
+                    requeued++;
+                    _logger.LogWarning("🔁 ResourceId={ResourceId} failed (attempt {Attempts}/{Max}); requeued for retry: {Message}",
+                        record.ResourceId, attempts, MaxSendAttempts, message);
+                }
+            }
+
+            // Round-robin across clients so a high-volume client cannot starve others (Finding 3.4):
+            // process one record per active client per round. Each client keeps its own circuit breaker.
+            var queues = records
+                .GroupBy(r => r.ClientId ?? string.Empty)
+                .ToDictionary(g => g.Key, g => new Queue<FhirSyncRecord>(g.Cast<FhirSyncRecord>()));
+            var clients = queues.Keys.ToList();
+            var consecutiveErrors = clients.ToDictionary(c => c, _ => 0);
+            var breakerOpen = clients.ToDictionary(c => c, _ => false);
+
+            var progressed = true;
+            while (progressed)
+            {
+                progressed = false;
+                foreach (var clientId in clients)
+                {
+                    var queue = queues[clientId];
+                    if (queue.Count == 0) continue;
+                    var record = queue.Dequeue();
+                    progressed = true;
+
                     // Per-record audit/trace scope (carries through to all logs + StatusEvents below)
                     using var recordScope = _logger.BeginScope(new Dictionary<string, object>
                     {
@@ -104,14 +151,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                         ["ResourceId"] = record.ResourceId ?? string.Empty
                     });
 
-                    // Per-client circuit breaker: fast-fail the rest of THIS client's batch.
-                    if (breakerOpen)
+                    // Per-client circuit breaker: leave the rest of THIS client's records Pending so they
+                    // are retried next cycle (other clients are unaffected; nothing is permanently failed here).
+                    if (breakerOpen[clientId])
                     {
-                        failedUpdates[record.Id] = new RecordStatusUpdate("Failed",
-                            $"Skipped: client '{groupClientId}' circuit open after {ClientBreakerThreshold} consecutive failures",
-                            "", "{}");
-                        if (record.StagingId.HasValue)
-                            marksToFail.Add(record.StagingId.Value);
+                        _logger.LogWarning("⏭️ Skipping ResourceId={ResourceId}: client '{ClientId}' circuit open after {Threshold} consecutive failures; left Pending for retry.",
+                            record.ResourceId, clientId, ClientBreakerThreshold);
                         continue;
                     }
 
@@ -137,7 +182,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             cancellationToken: token);
 
                         // The send completed (transport + auth OK), even if the API rejected it → reset breaker.
-                        consecutiveErrors = 0;
+                        consecutiveErrors[clientId] = 0;
 
                         var responseRaw = apiResponse?.Raw ?? "{}";
                         var responseMsg = apiResponse?.Message ?? "Unsuccessful response";
@@ -147,13 +192,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                                        && string.Equals(apiResponse.Status, "success", StringComparison.OrdinalIgnoreCase)
                                        && apiResponse.Code == 202;
 
+                        var isBundle = apiResponse?.Data != null && apiResponse.Data.Count > 0;
                         string? representativeTxn = null;
 
                         // If PDS returned bundle-style items, process them
-                        if (apiResponse?.Data != null && apiResponse.Data.Count > 0)
+                        if (isBundle)
                         {
                             var idx = 0;
-                            foreach (var item in apiResponse.Data)
+                            foreach (var item in apiResponse!.Data!)
                             {
                                 var itemStatus = item.Status;
                                 var itemMessage = item.Message;
@@ -191,76 +237,64 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                             // Single response: use top-level transactionId if present
                             representativeTxn = responseTxn;
 
-                            // If accepted => seed pending. If not accepted => seed error (optional)
+                            // If accepted => seed pending. (Error events are seeded on permanent failure below,
+                            // not on every transient retry.)
                             if (accepted && !string.IsNullOrWhiteSpace(representativeTxn))
-                            {
                                 await TrySeedPendingAsync(record, representativeTxn!, token);
-                            }
-                            else if (!accepted)
-                            {
-                                await TrySeedErrorAsync(record, token, message: responseMsg);
-                            }
                         }
 
                         // Persist record outcome (success and failure are mutually exclusive)
                         if (!accepted)
                         {
-                            failedUpdates[record.Id] = new RecordStatusUpdate("Failed", responseMsg, representativeTxn ?? "", responseRaw);
-
-                            if (record.StagingId.HasValue)
-                                marksToFail.Add(record.StagingId.Value);
-
+                            // Bundle item-level errors were already seeded above; avoid a duplicate record-level event.
+                            await RecordFailedAttemptAsync(record, responseMsg, representativeTxn, responseRaw, seedErrorOnPermanent: !isBundle);
                             _logger.LogWarning("❌ API error for ResourceId={ResourceId}: {Message}", record.ResourceId, responseMsg);
                         }
                         else
                         {
-                            successUpdates[record.Id] = new RecordStatusUpdate("Synced", apiResponse?.Message ?? "Request accepted", representativeTxn ?? "", responseRaw);
+                            updates[record.Id] = new RecordStatusUpdate("Synced", apiResponse?.Message ?? "Request accepted", representativeTxn ?? string.Empty, responseRaw);
 
                             if (record.StagingId.HasValue)
-                                marksToSubmit.Add(new StagingTransmissionMark(record.StagingId.Value, representativeTxn ?? "", DateTime.UtcNow));
+                                marksToSubmit.Add(new StagingTransmissionMark(record.StagingId.Value, representativeTxn ?? string.Empty, DateTime.UtcNow));
 
+                            synced++;
                             _logger.LogInformation("✅ Accepted ResourceId={ResourceId} ({Type}). Txn={Txn}",
                                 record.ResourceId, normalizedType, representativeTxn ?? "<none>");
                         }
                     }
                     catch (Exception ex)
                     {
-                        failedUpdates[record.Id] = new RecordStatusUpdate("Failed", ex.Message, "", $"{{\"error\":\"{ex.Message}\"}}");
-
-                        if (record.StagingId.HasValue)
-                            marksToFail.Add(record.StagingId.Value);
+                        await RecordFailedAttemptAsync(record, ex.Message, null, $"{{\"error\":\"{ex.Message}\"}}", seedErrorOnPermanent: true);
 
                         _logger.LogError(ex, "❌ Sync failed for ResourceId={ResourceId}", record.ResourceId);
 
                         // Trip the per-client breaker after repeated transport/auth failures.
-                        if (++consecutiveErrors >= ClientBreakerThreshold)
+                        if (++consecutiveErrors[clientId] >= ClientBreakerThreshold)
                         {
-                            breakerOpen = true;
-                            _logger.LogError("⛔ Client {ClientId} circuit opened after {Count} consecutive failures; skipping remaining records this batch.",
-                                groupClientId, consecutiveErrors);
+                            breakerOpen[clientId] = true;
+                            _logger.LogError("⛔ Client {ClientId} circuit opened after {Count} consecutive failures; remaining records left Pending this batch.",
+                                clientId, consecutiveErrors[clientId]);
                         }
                     }
                 }
             }
 
             // Persist + summarize
-            if (successUpdates.Any())
-                await _repository.BulkUpdateStatusAsync<T>(successUpdates);
+            if (updates.Count > 0)
+                await _repository.BulkUpdateStatusAsync<T>(updates);
 
-            if (failedUpdates.Any())
-                await _repository.BulkUpdateStatusAsync<T>(failedUpdates);
-
-            result.Synced = successUpdates.Count;
-            result.Failed = failedUpdates.Count;
-            result.FailedIds = failedUpdates.Keys.ToList();
+            result.Synced = synced;
+            result.Requeued = requeued;
+            result.Failed = failed;
+            result.FailedIds = failedIds;
 
             if (marksToSubmit.Count > 0)
                 await _stagingUpdateWriter.BulkMarkSubmittedAsync(marksToSubmit, token);
             if (marksToFail.Count > 0)
                 await _stagingUpdateWriter.BulkMarkFailedAsync(marksToFail, token);
 
-            _logger.LogInformation("📊 Sync result for {Type}: Total={Total}, Synced={Synced}, Failed={Failed}",
-                logResourceName, result.Total, result.Synced, result.Failed);
+            _logger.LogInformation("📊 Sync result for {Type}: Total={Total}, Synced={Synced}, Requeued={Requeued}, Failed={Failed}",
+                logResourceName, result.Total, result.Synced, result.Requeued, result.Failed);
 
             return result;
         }

@@ -69,5 +69,24 @@ decision above still holds until DevOps switches it on:
   is a future enhancement.
 - Per-client callback **auth** (signing / bearer) beyond `x-client-id` is not yet implemented.
 
+## Decision reaffirmed — 2026-05-31
+
+Reviewed again alongside the per-client fairness/retry work. Decision unchanged: **keep trusting the
+stored EMR callback URL**; do **not** enable enforcement and do **not** add per-client callback auth in
+this round.
+
+- `EmrCallback:Validation:Enabled` stays `false` (trust) — flipping it on remains a **DevOps/Security**
+  decision, gated on the verification checklist above.
+- Per-client callback **auth** (signing/bearer) and sourcing the host allow-list from the **client
+  registry** are explicitly **deferred** (the registry does not yet expose these). `x-client-id` remains
+  the only client-aware callback signal.
+- **No code change** was made to the callback path; this is a documentation reaffirmation so the residual
+  SSRF / open-redirect risk stays visible to DevOps until egress controls + capture-time validation
+  (checklist above) are confirmed.
+
+> **DevOps action still owed:** confirm the egress restrictions and capture-time URL validation in the
+> checklist, then decide whether to enable `EmrCallback:Validation:Enabled`. Until then the risk is
+> accepted by design.
+
 See [`SECRETS-AND-CONFIG.md`](./SECRETS-AND-CONFIG.md) for the config keys.
 </content>

@@ -14,8 +14,9 @@ using Ship.Ses.Transmitter.Infrastructure.Settings;
 namespace Ship.Ses.Transmitter.Infrastructure.UnitTests.ReadServices;
 
 /// <summary>
-/// Pins the success/fail bookkeeping in <see cref="FhirSyncService.ProcessPendingRecordsAsync{T}"/>.
-/// Regression guard for FINDINGS.md §3.6: a rejected record must NOT also be marked Synced.
+/// Pins the bookkeeping in <see cref="FhirSyncService.ProcessPendingRecordsAsync{T}"/>:
+/// success/fail mutual exclusion (FINDINGS.md §3.6), bounded retry (§3.5 — requeue as Pending until the
+/// attempt cap, then permanent Failed), per-client round-robin fairness (§3.4), and the per-client breaker.
 /// </summary>
 public class FhirSyncServiceTests
 {
@@ -56,13 +57,14 @@ public class FhirSyncServiceTests
         _staging.Object,
         _routing.Object);
 
-    private static PatientSyncRecord PendingPatient(string clientId = "client-a", string resourceId = "p1") => new()
+    private static PatientSyncRecord PendingPatient(string clientId = "client-a", string resourceId = "p1", int retryCount = 0) => new()
     {
         Id = ObjectId.GenerateNewId().ToString(),
         ResourceType = "Patient",
         ResourceId = resourceId,
         ClientId = clientId,
         Status = "Pending",
+        RetryCount = retryCount,
         FhirJson = new BsonDocument { { "resourceType", "Patient" }, { "id", resourceId } }
     };
 
@@ -85,18 +87,35 @@ public class FhirSyncServiceTests
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()));
 
     [Fact]
-    public async Task ProcessPendingRecords_WhenApiRejects_MarksFailedOnly_NotSynced()
+    public async Task ProcessPendingRecords_WhenApiRejects_FreshRecord_RequeuesAsPending_NotSynced()
     {
-        SetupPending(PendingPatient());
+        SetupPending(PendingPatient(retryCount: 0));
         SetupSendAny().ReturnsAsync(new FhirApiResponse { Status = "error", Code = 400, Message = "bad request", Raw = "{}" });
 
         var result = await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
 
         Assert.Equal(1, result.Total);
-        Assert.Equal(1, result.Failed);
-        Assert.Equal(0, result.Synced); // regression guard: rejected record was previously double-written as Synced
+        Assert.Equal(1, result.Requeued);            // bounded retry: not yet at the cap → requeued
+        Assert.Equal(0, result.Failed);              // not permanently failed yet
+        Assert.Equal(0, result.Synced);              // regression guard (§3.6): a rejected record is never Synced
         Assert.DoesNotContain(_persisted, p => p.status == "Synced");
+        Assert.Contains(_persisted, p => p.status == "Pending"); // left Pending for the next cycle
+    }
+
+    [Fact]
+    public async Task ProcessPendingRecords_WhenApiRejects_OnFinalAttempt_MarksPermanentlyFailed()
+    {
+        // RetryCount 2 → this is attempt 3 of 3 → permanent failure, no further requeue.
+        SetupPending(PendingPatient(retryCount: 2));
+        SetupSendAny().ReturnsAsync(new FhirApiResponse { Status = "error", Code = 400, Message = "bad request", Raw = "{}" });
+
+        var result = await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
+
+        Assert.Equal(1, result.Failed);
+        Assert.Equal(0, result.Requeued);
+        Assert.Equal(0, result.Synced);
         Assert.Contains(_persisted, p => p.status == "Failed");
+        Assert.DoesNotContain(_persisted, p => p.status == "Pending");
     }
 
     [Fact]
@@ -151,14 +170,16 @@ public class FhirSyncServiceTests
         var result = await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
 
         Assert.Equal(2, result.Total);
-        Assert.Equal(1, result.Synced); // good client unaffected by bad client's outage
-        Assert.Equal(1, result.Failed);
+        Assert.Equal(1, result.Synced);   // good client unaffected by bad client's outage
+        Assert.Equal(1, result.Requeued); // bad client's record requeued (fresh → not yet permanently failed)
+        Assert.Equal(0, result.Failed);
     }
 
     [Fact]
     public async Task ProcessPendingRecords_ClientBreaker_OpensAfterConsecutiveFailures_SkipsRest()
     {
-        // 5 records for one client, all throwing → breaker should open after 3 and skip the rest.
+        // 5 fresh records for one client, all throwing → breaker opens after 3 attempts; the rest are
+        // skipped and left Pending (not attempted, not permanently failed).
         SetupPending(Enumerable.Range(1, 5)
             .Select(i => PendingPatient(clientId: "bad-client", resourceId: $"r{i}"))
             .ToArray());
@@ -168,12 +189,35 @@ public class FhirSyncServiceTests
         var result = await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
 
         Assert.Equal(5, result.Total);
-        Assert.Equal(5, result.Failed); // 3 real attempts + 2 skipped, all recorded as Failed
         Assert.Equal(0, result.Synced);
+        Assert.Equal(0, result.Failed);     // nothing permanently failed (all fresh, breaker tripped)
+        Assert.Equal(3, result.Requeued);   // the 3 attempted were requeued; 2 skipped were left untouched
 
         // Only 3 outbound attempts were made before the breaker opened.
         _api.Verify(a => a.SendAsync(
             It.IsAny<FhirOperation>(), "bad-client", It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task ProcessPendingRecords_RoundRobin_InterleavesClients()
+    {
+        // Two clients with two records each, queued grouped (a,a,b,b). Round-robin must interleave
+        // them (a,b,a,b) so a high-volume client cannot drain ahead of others. (Finding 3.4)
+        SetupPending(
+            PendingPatient(clientId: "client-a", resourceId: "a1"),
+            PendingPatient(clientId: "client-a", resourceId: "a2"),
+            PendingPatient(clientId: "client-b", resourceId: "b1"),
+            PendingPatient(clientId: "client-b", resourceId: "b2"));
+
+        var order = new List<string>();
+        SetupSendAny()
+            .Callback<FhirOperation, string, string, string, string, string?, string?, CancellationToken>(
+                (_, clientId, _, _, _, _, _, _) => order.Add(clientId))
+            .ReturnsAsync(Accepted());
+
+        await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
+
+        Assert.Equal(new[] { "client-a", "client-b", "client-a", "client-b" }, order);
     }
 }

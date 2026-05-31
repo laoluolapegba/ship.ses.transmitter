@@ -151,8 +151,8 @@ namespace Ship.Ses.Transmitter.Worker
 
                 var result = await svc.ProcessPendingRecordsAsync<T>(token);
 
-                _logger.LogInformation("✅ {RecordType} processed from {Collection}: Total={Total}, Synced={Synced}, Failed={Failed}",
-                    recordType, collection, result.Total, result.Synced, result.Failed);
+                _logger.LogInformation("✅ {RecordType} processed from {Collection}: Total={Total}, Synced={Synced}, Requeued={Requeued}, Failed={Failed}",
+                    recordType, collection, result.Total, result.Synced, result.Requeued, result.Failed);
             }
         }
 

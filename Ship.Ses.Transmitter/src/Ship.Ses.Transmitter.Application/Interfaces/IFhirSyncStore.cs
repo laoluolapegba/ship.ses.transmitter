@@ -53,5 +53,11 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
     }
 
     /// <summary>A status mutation to apply to a sync record (storage-neutral; replaces a MongoDB tuple).</summary>
-    public sealed record RecordStatusUpdate(string Status, string Message, string TransactionId, string RawResponse);
+    /// <param name="IncrementRetry">
+    /// When true the adapter increments the record's attempt counter (RetryCount). Set for every failed
+    /// send attempt — whether the record is requeued (<c>Pending</c>) or permanently failed (<c>Failed</c>) —
+    /// so bounded retry can cap attempts. Left false for successful syncs.
+    /// </param>
+    public sealed record RecordStatusUpdate(
+        string Status, string Message, string TransactionId, string RawResponse, bool IncrementRetry = false);
 }

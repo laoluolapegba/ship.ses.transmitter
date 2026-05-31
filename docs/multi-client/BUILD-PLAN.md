@@ -57,8 +57,9 @@ These are safe to do before the architecture change and de-risk it.
 
 - [x] **Fix success/fail double-write** in `FhirSyncService.ProcessPendingRecordsAsync`
       (Finding 3.6) — a failed record must not also be marked `Synced`. *(2026-05-30, test-pinned)*
-- [ ] **Increment `RetryCount` + set `LastAttemptAt`** on failure; add max-retry / dead-letter
-      (Finding 3.5).
+- [x] **Increment `RetryCount` + set `LastAttemptAt`** on failure; add max-retry / dead-letter
+      (Finding 3.5). *(2026-05-31)* — bounded retry: requeue `Pending` until `MaxSendAttempts` (3), then
+      permanent `Failed` (cap-only; no backoff / no separate dead-letter state).
 - [x] **Stop logging token prefixes** in `HttpSyncMetricsWriter` (Finding 6.1). *(2026-05-30)*
 - [x] **Remove secrets from `appsettings.json`**; load from env/secret store
       (Findings 1.3, 6.2; see `SECRETS-AND-CONFIG.md`). *(2026-05-30)* — ⚠️ **rotation of committed
@@ -104,7 +105,8 @@ through `SendAsync`). `TokenService` remains the active path until then.
 - [x] `FhirApiService` resolves the token via `IFhirTokenService.GetAccessTokenAsync(clientId, scope)` —
       credential per `clientId`, `route.Scope` for routing; `ResolveRoute` unchanged (Findings 4.1, 4.2).
       `TokenService` (single global identity) **retired/deleted**. *(2026-05-30)*
-- [x] Group `ProcessPendingRecordsAsync` by `clientId` (Finding 3.1). *(2026-05-30)*
+- [x] Group `ProcessPendingRecordsAsync` by `clientId` (Finding 3.1). *(2026-05-30)* — superseded by
+      **round-robin across clients** for fairness (Finding 3.4). *(2026-05-31)*
 - [x] Per-client failure isolation: consecutive-failure **circuit breaker** (threshold 3) per client
       group — fast-fails the rest of a failing client's batch without touching other clients (Finding 2.6). *(2026-05-30)*
 - [x] mTLS / per-client cert: N/A — dead `ClientCert` config already removed in Phase 1 (Finding 4.3).

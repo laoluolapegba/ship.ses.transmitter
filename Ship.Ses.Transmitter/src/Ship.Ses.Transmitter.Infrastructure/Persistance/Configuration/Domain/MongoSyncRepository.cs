@@ -76,13 +76,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                 var update = Builders<T>.Update
                     .Set(r => r.Status, v.Status)
                     .Set(r => r.ErrorMessage, v.Message)
-                    .Set(r => r.TimeSynced, DateTime.UtcNow)
                     .Set(r => r.TransactionId, v.TransactionId)
                     .Set(r => r.ApiResponsePayload, v.RawResponse)
                     .Set(r => r.LastAttemptAt, DateTime.UtcNow);
 
-                // Track attempts on failure (Finding 3.5). Dead-letter requeue remains a future enhancement.
-                if (string.Equals(v.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+                // TimeSynced reflects a successful sync only — not a failed attempt or a retry requeue.
+                if (string.Equals(v.Status, "Synced", StringComparison.OrdinalIgnoreCase))
+                    update = update.Set(r => r.TimeSynced, DateTime.UtcNow);
+
+                // Count every failed attempt (requeue or permanent fail) so bounded retry can cap it (Finding 3.5).
+                if (v.IncrementRetry)
                     update = update.Inc(r => r.RetryCount, 1);
 
                 return new UpdateOneModel<T>(filter, update);
