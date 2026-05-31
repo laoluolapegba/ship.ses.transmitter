@@ -81,10 +81,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.AdminApi
                           Content = JsonContent.Create(payload, options: jsonOptions)
                       };
 
-                // Get and log the access token for debugging
                 var token = await _tokenService.GetAccessTokenAsync(ct);
-                _log.LogInformation("🔐 Using access token: {Token}",
-                    string.IsNullOrEmpty(token) ? "Token not found" : $"{token.Substring(0,10)}...");
+                if (string.IsNullOrEmpty(token))
+                    _log.LogWarning("🔐 No admin access token acquired for metrics POST to {Url}",
+                        new Uri(_http.BaseAddress, path).ToString());
 
                 req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
                 req.Headers.TryAddWithoutValidation("Idempotency-Key", Idempotency.NewKey());
@@ -94,7 +94,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.AdminApi
                 {
                     using var res = await _http.SendAsync(req, ct);
                     var responseBody = await res.Content.ReadAsStringAsync(ct);
-            
+
                     if (res.IsSuccessStatusCode)
                     {
                         _log.LogInformation("✅ POST to {Url} succeeded with status {StatusCode}. Response: {ResponseBody}",
@@ -151,10 +151,10 @@ namespace Ship.Ses.Transmitter.Infrastructure.AdminApi
                 Content = JsonContent.Create(dto, options: jsonOptions)
             };
 
-            // Get and log the access token for debugging
             var token = await _tokenService.GetAccessTokenAsync(ct);
-            _log.LogInformation("🔐 Using access token: {Token}",
-                string.IsNullOrEmpty(token) ? "Token not found" : $"{token.Substring(0,10)} ...");
+            if (string.IsNullOrEmpty(token))
+                _log.LogWarning("🔐 No admin access token acquired for status PUT to {Url}",
+                    new Uri(_http.BaseAddress, path).ToString());
 
             req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
             req.Headers.TryAddWithoutValidation("Idempotency-Key", Idempotency.NewKey());
