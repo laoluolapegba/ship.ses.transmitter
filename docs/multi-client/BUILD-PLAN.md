@@ -34,9 +34,9 @@ solution but empty.
       (per-client credential material, scope excluded, default grant type, value equality) and
       `FhirApiResponseMappingTests` (SHIP-response DTO mapping incl. `FlexibleBundleConverter` tolerance). *(2026-05-31)*
 - [x] `FhirApiService` routing + auth-header tests (`FhirApiServiceTests`, `CountingHttpMessageHandler`
-      mock): bearer resolved per `record.ClientId`, route-derived scope (+ `AuthSettings` fallback),
-      Default vs PDS path shapes, Bundle routing, payload enveloping, HTTP-error → `FhirApiResponse`
-      mapping, missing-BaseUrl guard. Token-service caching/single-flight already covered by
+      mock): bearer resolved per `record.ClientId`, scope from `AuthSettings` (later made route-independent —
+      see Phase 7), Default vs PDS path shapes, Bundle routing, payload enveloping, HTTP-error →
+      `FhirApiResponse` mapping, missing-BaseUrl guard. Token-service caching/single-flight already covered by
       `CachedFhirTokenServiceTests` (the single-identity `TokenService` was deleted in Phase 3). *(2026-05-31)*
 - [x] CI `dotnet test` gate (`.github/workflows/tests.yml`) — runs the three test projects directly
       (the .sln references a WebApi project absent from this repo). *(2026-05-31)*
@@ -103,8 +103,9 @@ through `SendAsync`). `TokenService` remains the active path until then.
 - [x] `FhirSyncService` passes `record.ClientId` (Finding 3.2); `StatusProbeWorker` passes `ev.ClientId`
       (+ `ClientId` added to the probe's missing-identifier guard). *(2026-05-30)*
 - [x] `FhirApiService` resolves the token via `IFhirTokenService.GetAccessTokenAsync(clientId, scope)` —
-      credential per `clientId`, `route.Scope` for routing; `ResolveRoute` unchanged (Findings 4.1, 4.2).
-      `TokenService` (single global identity) **retired/deleted**. *(2026-05-30)*
+      credential per `clientId`; `ResolveRoute` unchanged (Findings 4.1, 4.2). `TokenService` (single global
+      identity) **retired/deleted**. *(2026-05-30)* — scope was initially route-derived; **Phase 7** moved it
+      to `AuthSettings:Scope` (auth is not shipService-specific).
 - [x] Group `ProcessPendingRecordsAsync` by `clientId` (Finding 3.1). *(2026-05-30)* — superseded by
       **round-robin across clients** for fairness (Finding 3.4). *(2026-05-31)*
 - [x] Per-client failure isolation: consecutive-failure **circuit breaker** (threshold 3) per client
@@ -135,8 +136,9 @@ two-client *integration* test (real host) is deferred to the integration-test pr
 **Exit:** ✅ per-client credentials can be resolved from Vault (feature-flagged), instance config has no
 client secrets, tenant vs per-record-client identities are cleanly separated. Tests cover the reader and
 provider (35 Infrastructure tests green).
-**Note:** 401-triggered eager re-read (call `Invalidate` from the token service on auth failure) and a
-live-Vault integration test are sensible follow-ups; rotation is currently picked up within the cache TTL.
+**Note:** the initial Phase 4 design used a per-request **TTL cache** (`Invalidate(clientId)` on rotation).
+**Superseded by Phase 7** — the provider now lists + loads all clients **once at startup** (no per-request
+calls, no TTL), matching the Ingestor. A live-Vault integration test remains a sensible follow-up.
 
 ---
 
@@ -184,6 +186,40 @@ Postgres adapter is a future drop-in (implement the same interface + a `FOR UPDA
 Tests pass (3 Domain + 45 Infrastructure). **Note:** the entity types still carry Bson attributes (read
 by the Mongo adapter; a Postgres adapter would map them via EF) — full entity/ORM mapping for Postgres is
 the remaining work when that migration is actually scheduled.
+
+---
+
+## Phase 7 — Vault startup-load + routing/auth finalization
+
+Aligns the Transmitter's Vault retrieval with the SeS Ingestor (DevOps configures Vault clients once,
+both services retrieve the same way) and finalizes the routing/auth separation.
+
+- [x] **Vault: load all clients once at startup** (`IClientCredentialProvider.InitializeAsync`,
+      called from `Program.cs` before workers start). `VaultClientCredentialProvider` discovers clients by
+      **listing** the prefix and reads each secret once into memory; `IVaultSecretReader` gains
+      `ListClientIdsAsync` and KV-version-aware read/list paths. **No per-request Vault calls, no TTL cache.**
+      Only **active, non-revoked** clients (via `isActive`/`isRevoked`/`status`) with a usable secret are
+      loaded. Mirrors the Ingestor's `VaultClientHmacCredentialLoader`/registry. *(2026-06-01)*
+- [x] **Process valid clients only** — `FhirSyncService` skips records whose `clientId` is not in the loaded
+      active set (left `Pending`); `IsClientKnown` on the provider. New/rotated clients need a **restart**. *(2026-06-01)*
+- [x] `VaultOptions`: added `KvVersion`/`StatusKey`/`IsActiveKey`/`IsRevokedKey`; removed `CacheTtlSeconds`.
+      Kept the Transmitter's own path prefix (`ses/clients/{clientId}/hmac`) — same mechanism as the Ingestor,
+      distinct secret (outbound OAuth vs inbound HMAC). *(2026-06-01)*
+- [x] **Authorization is not shipService-specific:** per-route `Scope` removed; `FhirApiService` uses
+      `AuthSettings:Scope` (`ship-full-access`) for every target. Per-route `ClientCert` and the legacy
+      `FhirApi` cert fields/`FhirClientCertificateSettings` removed. `FhirRouting:Default` retained. *(2026-06-01)*
+- [x] **Fail fast at startup:** `ValidateOnStart` for `AuthSettings` (TokenEndpoint/Scope) and each
+      `FhirRouting:Apis` entry (Name/BaseUrl). *(2026-06-01)*
+- [x] `ShipAdminAuth:ClientId` → **`TenantId`** (tenant-level Admin API identity; still sent on the wire as
+      the `clientId` token parameter). *(2026-06-01)*
+- [x] Added **`DEPLOYMENT.md`** (env-var/config reference + startup logs), and updated `FINDINGS.md` /
+      `SECRETS-AND-CONFIG.md`. *(2026-06-01)*
+
+**Exit:** ✅ Vault retrieval matches the Ingestor (configure once, restart to refresh); only valid clients are
+processed; scope/cert are no longer per-route; misconfiguration fails at boot. Suite: 3 Domain + 9 Application
++ 63 Infrastructure green.
+**Note:** non-fatal startup load (logs loudly, loads nothing if Vault is unreachable / 0 clients) — flip to
+hard-fail if policy prefers. Live-Vault integration test still a follow-up.
 
 ---
 
