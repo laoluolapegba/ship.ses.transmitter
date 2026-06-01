@@ -28,6 +28,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             _log = log;
         }
 
+        // Single-client fallback has no Vault discovery step.
+        public Task InitializeAsync(CancellationToken ct = default) => Task.CompletedTask;
+
+        // Open mode: any non-blank clientId is processed against the one configured credential.
+        public bool IsClientKnown(string clientId) => !string.IsNullOrWhiteSpace(clientId);
+
         public Task<ClientCredential> GetAsync(string clientId, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(clientId))

@@ -58,4 +58,15 @@ public class ConfigClientCredentialProviderTests
     {
         await Assert.ThrowsAsync<ArgumentException>(() => CreateSut(Auth).GetAsync(clientId));
     }
+
+    [Fact]
+    public async Task InitializeAsync_IsNoOp_AndEveryNonBlankClientIsKnown()
+    {
+        var sut = CreateSut(Auth);
+        await sut.InitializeAsync(); // single-client fallback: nothing to discover
+
+        Assert.True(sut.IsClientKnown("any-client"));
+        Assert.False(sut.IsClientKnown(""));
+        Assert.False(sut.IsClientKnown("   "));
+    }
 }

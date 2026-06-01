@@ -10,21 +10,19 @@ public class FhirRoutingSettingsTests
 {
     private static FhirRoutingSettings BuildRouting() => new()
     {
-        Default = new FhirRouteSettings { BaseUrl = "https://gateway/fhir", Scope = "ship" },
+        Default = new FhirRouteSettings { BaseUrl = "https://gateway/fhir" },
         Apis = new()
         {
             new FhirApiRouteSettings
             {
                 Name = "PDS",
                 BaseUrl = "https://pds",
-                Scope = "ship-full-access",
                 Resources = { "Patient" }
             },
             new FhirApiRouteSettings
             {
                 Name = "SCR",
                 BaseUrl = "https://scr",
-                Scope = "ship-full-access",
                 Resources = { "Observation", "Condition" }
             }
         }

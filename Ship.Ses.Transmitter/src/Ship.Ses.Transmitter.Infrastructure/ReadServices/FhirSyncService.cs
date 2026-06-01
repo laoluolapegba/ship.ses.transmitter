@@ -49,15 +49,18 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
         private readonly IFhirApiService _fhirApiService;
         private readonly IStagingUpdateWriter _stagingUpdateWriter;
         private readonly IOptionsMonitor<FhirRoutingSettings> _routingSettings;
+        private readonly IClientCredentialProvider _credentials;
 
         public FhirSyncService(IFhirSyncStore repository, ILogger<FhirSyncService> logger, IFhirApiService fhirApiService,
-            IStagingUpdateWriter stagingUpdateWriter, IOptionsMonitor<FhirRoutingSettings> routingSettings)
+            IStagingUpdateWriter stagingUpdateWriter, IOptionsMonitor<FhirRoutingSettings> routingSettings,
+            IClientCredentialProvider credentials)
         {
             _repository = repository;
             _logger = logger;
             _fhirApiService = fhirApiService;
             _stagingUpdateWriter = stagingUpdateWriter;
             _routingSettings = routingSettings;
+            _credentials = credentials;
 
         }
 
@@ -74,8 +77,24 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     .Where(r => !string.IsNullOrWhiteSpace(r.ResourceType) && resourceFilters.Contains(r.ResourceType))
                     .ToList();
 
-            result.Total = records.Count;
             var logResourceName = DescribeResource<T>(resourceFilters);
+
+            // Process only clients we can authenticate. Vault mode: the active client set discovered at
+            // startup; unknown or inactive/revoked clients are left Pending (a restart is required to pick up
+            // newly added clients). Config mode: every non-blank clientId is known. (Valid-clients-only.)
+            var known = new List<T>(records.Count);
+            var unknownClients = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var r in records)
+            {
+                if (_credentials.IsClientKnown(r.ClientId)) known.Add(r);
+                else unknownClients.Add(string.IsNullOrWhiteSpace(r.ClientId) ? "<none>" : r.ClientId!);
+            }
+            if (unknownClients.Count > 0)
+                _logger.LogWarning("⏭️ Skipped {Count} {Type} record(s) for unknown/inactive client(s) [{Clients}]; left Pending (restart to load newly added clients).",
+                    records.Count - known.Count, logResourceName, string.Join(", ", unknownClients));
+            records = known;
+
+            result.Total = records.Count;
 
             _logger.LogInformation("🔎 Pending {Type} records: {Count}", logResourceName, result.Total);
             if (result.Total == 0) return result;

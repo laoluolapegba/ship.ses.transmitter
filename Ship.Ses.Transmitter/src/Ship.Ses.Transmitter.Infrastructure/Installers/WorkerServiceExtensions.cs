@@ -72,7 +72,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             {
                 var msSqlSettings = appSettings.ShipServerSqlDb;
             }
-            services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
+            // Outbound FHIR authorization defaults. Scope lives here (not per FHIR route): the same
+            // credential/scope authenticates to every SHIP target system. Fail fast if misconfigured.
+            services.AddOptions<AuthSettings>()
+                .Bind(configuration.GetSection("AuthSettings"))
+                .Validate(a => !string.IsNullOrWhiteSpace(a.TokenEndpoint), "AuthSettings:TokenEndpoint is required")
+                .Validate(a => !string.IsNullOrWhiteSpace(a.Scope),
+                    "AuthSettings:Scope is required (outbound authorization scope is no longer set per FHIR route)")
+                .ValidateOnStart();
             services.AddSingleton<AdminTokenService>();
 
             // Multi-client outbound auth: credential resolved per clientId, token cached per (clientId, scope).

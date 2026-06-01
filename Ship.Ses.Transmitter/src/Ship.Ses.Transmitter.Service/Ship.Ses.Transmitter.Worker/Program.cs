@@ -19,6 +19,7 @@ using Ship.Ses.Transmitter.Infrastructure.Settings;
 using Ship.Ses.Transmitter.Worker;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using static Org.BouncyCastle.Math.EC.ECCurve;
 
@@ -54,14 +55,6 @@ else if (legacyFhirSection.Exists())
         opts.Default.BaseUrl = legacy.BaseUrl ?? throw new InvalidOperationException("FhirApi:BaseUrl is required");
         opts.Default.TimeoutSeconds = legacy.TimeoutSeconds > 0 ? legacy.TimeoutSeconds : 30;
         opts.Default.CallbackUrlTemplate = legacy.CallbackUrlTemplate;
-        if (!string.IsNullOrWhiteSpace(legacy.ClientCertPath))
-        {
-            opts.Default.ClientCert = new FhirClientCertificateSettings
-            {
-                Path = legacy.ClientCertPath,
-                Password = legacy.ClientCertPassword
-            };
-        }
     });
 }
 else
@@ -76,6 +69,10 @@ fhirOptionsBuilder
         opts.Apis ??= new List<FhirApiRouteSettings>();
     })
     .Validate(opts => !string.IsNullOrWhiteSpace(opts.Default.BaseUrl), "FhirRouting:Default:BaseUrl is required")
+    .Validate(opts => opts.Apis.All(a => !string.IsNullOrWhiteSpace(a.Name)),
+        "Every FhirRouting:Apis entry must have a Name")
+    .Validate(opts => opts.Apis.All(a => !string.IsNullOrWhiteSpace(a.BaseUrl)),
+        "Every FhirRouting:Apis entry must have a BaseUrl")
     .ValidateOnStart();
 
 builder.Services.Configure<EmrCallbackOptions>(
@@ -254,6 +251,13 @@ Console.WriteLine(test == null
 
 var app = builder.Build();
 
+// Load the valid client set once, before any worker starts processing. Vault: discover + read all active
+// clients into memory (no per-request calls, no TTL). Config: a no-op. Adding/rotating a client → restart.
+using (var initScope = app.Services.CreateScope())
+{
+    var credentialProvider = initScope.ServiceProvider.GetRequiredService<IClientCredentialProvider>();
+    credentialProvider.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+}
 
 app.Run();
 

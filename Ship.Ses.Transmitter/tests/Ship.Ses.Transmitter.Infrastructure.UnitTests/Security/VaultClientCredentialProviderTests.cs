@@ -7,32 +7,27 @@ using Ship.Ses.Transmitter.Infrastructure.Settings;
 
 namespace Ship.Ses.Transmitter.Infrastructure.UnitTests.Security;
 
+/// <summary>
+/// Pins the startup-load model: clients are discovered by listing the prefix and read once into memory.
+/// Only active, non-revoked clients with a usable secret are loaded; there are no per-request Vault calls.
+/// (Consistent with the Ingestor's VaultClientHmacCredentialLoader.)
+/// </summary>
 public class VaultClientCredentialProviderTests
 {
-    private sealed class TestTimeProvider : TimeProvider
-    {
-        private DateTimeOffset _now;
-        public TestTimeProvider(DateTimeOffset start) => _now = start;
-        public override DateTimeOffset GetUtcNow() => _now;
-        public void Advance(TimeSpan by) => _now = _now.Add(by);
-    }
-
     private static readonly AuthSettings AuthDefaults = new()
     {
         TokenEndpoint = "https://identity/token",
         GrantType = "client_credentials"
     };
 
-    private static (VaultClientCredentialProvider sut, Mock<IVaultSecretReader> reader, TestTimeProvider clock) CreateSut(
-        VaultOptions? vault = null)
+    private static (VaultClientCredentialProvider sut, Mock<IVaultSecretReader> reader) CreateSut(VaultOptions? vault = null)
     {
         var reader = new Mock<IVaultSecretReader>();
-        var clock = new TestTimeProvider(DateTimeOffset.UtcNow);
         var opts = Options.Create(new ClientCredentialsOptions { Source = "Vault", Vault = vault ?? new VaultOptions() });
         var sut = new VaultClientCredentialProvider(
             reader.Object, opts, Options.Create(AuthDefaults),
-            NullLogger<VaultClientCredentialProvider>.Instance, clock);
-        return (sut, reader, clock);
+            NullLogger<VaultClientCredentialProvider>.Instance);
+        return (sut, reader);
     }
 
     private static IReadOnlyDictionary<string, string> Secret(params (string k, string v)[] pairs)
@@ -42,15 +37,24 @@ public class VaultClientCredentialProviderTests
         return d;
     }
 
-    [Fact]
-    public async Task GetAsync_ReadsSecretByClientIdPath_AndMergesNonSecretDefaults()
-    {
-        var (sut, reader, _) = CreateSut(new VaultOptions { PathTemplate = "ses/clients/{clientId}/hmac" });
-        reader.Setup(r => r.ReadAsync("ses/clients/lakeshore/hmac", It.IsAny<CancellationToken>()))
-              .ReturnsAsync(Secret(("clientSecret", "s3cr3t"), ("clientId", "lakeshore-oidc")));
+    private static void SetupList(Mock<IVaultSecretReader> reader, params string[] clientIds) =>
+        reader.Setup(r => r.ListClientIdsAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+              .ReturnsAsync(clientIds);
 
+    private static void SetupRead(Mock<IVaultSecretReader> reader, string path, IReadOnlyDictionary<string, string>? secret) =>
+        reader.Setup(r => r.ReadAsync(path, It.IsAny<CancellationToken>())).ReturnsAsync(secret);
+
+    [Fact]
+    public async Task Initialize_LoadsClient_MergesNonSecretDefaults_AndAppliesClientIdKey()
+    {
+        var (sut, reader) = CreateSut(new VaultOptions { PathTemplate = "ses/clients/{clientId}/hmac" });
+        SetupList(reader, "lakeshore");
+        SetupRead(reader, "ses/clients/lakeshore/hmac", Secret(("clientSecret", "s3cr3t"), ("clientId", "lakeshore-oidc")));
+
+        await sut.InitializeAsync();
         var cred = await sut.GetAsync("lakeshore");
 
+        Assert.True(sut.IsClientKnown("lakeshore"));
         Assert.Equal("https://identity/token", cred.TokenEndpoint); // non-secret default
         Assert.Equal("client_credentials", cred.GrantType);          // non-secret default
         Assert.Equal("s3cr3t", cred.ClientSecret);                   // from Vault
@@ -58,73 +62,102 @@ public class VaultClientCredentialProviderTests
     }
 
     [Fact]
-    public async Task GetAsync_NoClientIdInSecret_DefaultsToRequestedClientId()
+    public async Task Initialize_NoClientIdInSecret_DefaultsToFolderClientId()
     {
-        var (sut, reader, _) = CreateSut();
+        var (sut, reader) = CreateSut();
+        SetupList(reader, "client-a");
         reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(Secret(("clientSecret", "abc")));
 
-        var cred = await sut.GetAsync("client-a");
+        await sut.InitializeAsync();
 
-        Assert.Equal("client-a", cred.ClientId);
+        Assert.Equal("client-a", (await sut.GetAsync("client-a")).ClientId);
     }
 
     [Fact]
-    public async Task GetAsync_SecretKeyFallback_Hmac()
+    public async Task Initialize_SecretKeyFallback_Hmac()
     {
-        var (sut, reader, _) = CreateSut(new VaultOptions { SecretKey = "clientSecret" });
+        var (sut, reader) = CreateSut(new VaultOptions { SecretKey = "clientSecret" });
+        SetupList(reader, "c");
         reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(Secret(("hmac", "hmac-key"))); // no clientSecret → falls back to hmac
 
-        var cred = await sut.GetAsync("c");
+        await sut.InitializeAsync();
 
-        Assert.Equal("hmac-key", cred.ClientSecret);
+        Assert.Equal("hmac-key", (await sut.GetAsync("c")).ClientSecret);
     }
 
     [Fact]
-    public async Task GetAsync_CachesWithinTtl_ThenRefetchesAfterExpiry()
+    public async Task Initialize_ReadsEachClientExactlyOnce_NoPerRequestCalls()
     {
-        var (sut, reader, clock) = CreateSut(new VaultOptions { CacheTtlSeconds = 300 });
+        var (sut, reader) = CreateSut();
+        SetupList(reader, "c");
         reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
               .ReturnsAsync(Secret(("clientSecret", "s")));
 
+        await sut.InitializeAsync();
         await sut.GetAsync("c");
-        await sut.GetAsync("c");
-        reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once); // cached
+        await sut.GetAsync("c"); // served from memory
 
-        clock.Advance(TimeSpan.FromSeconds(301));
-        await sut.GetAsync("c");
-        reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2)); // refetched
+        reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
-    [Fact]
-    public async Task Invalidate_ForcesRefetch()
+    [Theory]
+    [InlineData("isActive", "false")]
+    [InlineData("isRevoked", "true")]
+    public async Task Initialize_SkipsInactiveOrRevokedClients(string key, string value)
     {
-        var (sut, reader, _) = CreateSut();
+        var (sut, reader) = CreateSut();
+        SetupList(reader, "c");
         reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync(Secret(("clientSecret", "s")));
+              .ReturnsAsync(Secret(("clientSecret", "s"), (key, value)));
 
-        await sut.GetAsync("c");
-        sut.Invalidate("c");
-        await sut.GetAsync("c");
+        await sut.InitializeAsync();
 
-        reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Exactly(2));
-    }
-
-    [Fact]
-    public async Task GetAsync_MissingSecret_Throws()
-    {
-        var (sut, reader, _) = CreateSut();
-        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync((IReadOnlyDictionary<string, string>?)null);
-
+        Assert.False(sut.IsClientKnown("c"));
         await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetAsync("c"));
+    }
+
+    [Fact]
+    public async Task Initialize_SkipsClientsWithUnreadableSecret()
+    {
+        var (sut, reader) = CreateSut();
+        SetupList(reader, "ok", "missing");
+        SetupRead(reader, "ses/clients/ok/hmac", Secret(("clientSecret", "s")));
+        SetupRead(reader, "ses/clients/missing/hmac", null);
+
+        await sut.InitializeAsync();
+
+        Assert.True(sut.IsClientKnown("ok"));
+        Assert.False(sut.IsClientKnown("missing"));
+    }
+
+    [Fact]
+    public async Task Initialize_NoClientsListed_LoadsNothing()
+    {
+        var (sut, reader) = CreateSut();
+        SetupList(reader); // empty
+
+        await sut.InitializeAsync();
+
+        Assert.False(sut.IsClientKnown("anyone"));
+        reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task GetAsync_UnknownClient_Throws()
+    {
+        var (sut, reader) = CreateSut();
+        SetupList(reader); // none loaded
+        await sut.InitializeAsync();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetAsync("nope"));
     }
 
     [Fact]
     public async Task GetAsync_BlankClientId_Throws()
     {
-        var (sut, _, _) = CreateSut();
+        var (sut, _) = CreateSut();
         await Assert.ThrowsAsync<ArgumentException>(() => sut.GetAsync(""));
     }
 }

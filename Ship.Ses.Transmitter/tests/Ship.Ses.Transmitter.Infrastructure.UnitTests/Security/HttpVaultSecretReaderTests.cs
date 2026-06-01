@@ -64,6 +64,36 @@ public class HttpVaultSecretReaderTests
     }
 
     [Fact]
+    public async Task ListClientIdsAsync_ParsesKeys_AndHitsMetadataListPath()
+    {
+        HttpRequestMessage? captured = null;
+        var handler = new CountingHttpMessageHandler(req =>
+        {
+            captured = req;
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"data\":{\"keys\":[\"lakeshore\",\"emr-b/\"]}}", Encoding.UTF8, "application/json")
+            };
+        });
+
+        var result = await CreateSut(handler).ListClientIdsAsync("ses/clients");
+
+        Assert.Equal(new[] { "lakeshore", "emr-b" }, result); // trailing slash trimmed
+        // KV v2 list shape: /v1/{mount}/metadata/{prefix}?list=true
+        Assert.Equal("https://vault.local:8200/v1/secret/metadata/ses/clients?list=true", captured!.RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task ListClientIdsAsync_Forbidden_ReturnsEmpty()
+    {
+        var handler = new CountingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.Forbidden));
+
+        var result = await CreateSut(handler).ListClientIdsAsync("ses/clients");
+
+        Assert.Empty(result);
+    }
+
+    [Fact]
     public async Task ReadAsync_ServerError_Throws()
     {
         var handler = new CountingHttpMessageHandler(_ => new HttpResponseMessage(HttpStatusCode.InternalServerError));

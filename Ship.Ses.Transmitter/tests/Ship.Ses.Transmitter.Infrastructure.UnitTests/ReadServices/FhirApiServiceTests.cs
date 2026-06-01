@@ -21,12 +21,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.UnitTests.ReadServices;
 /// </summary>
 public class FhirApiServiceTests
 {
-    private static FhirRoutingSettings Routing(string defaultScope = "ship", string defaultBaseUrl = "https://gateway/fhir") => new()
+    private static FhirRoutingSettings Routing(string defaultBaseUrl = "https://gateway/fhir") => new()
     {
-        Default = new FhirRouteSettings { BaseUrl = defaultBaseUrl, Scope = defaultScope, CallbackUrlTemplate = "https://cb/default" },
+        Default = new FhirRouteSettings { BaseUrl = defaultBaseUrl, CallbackUrlTemplate = "https://cb/default" },
         Apis =
         {
-            new FhirApiRouteSettings { Name = "PDS", BaseUrl = "https://pds", Scope = "ship-full-access", Resources = { "Patient" } }
+            new FhirApiRouteSettings { Name = "PDS", BaseUrl = "https://pds", Resources = { "Patient" } }
         }
     };
 
@@ -106,28 +106,33 @@ public class FhirApiServiceTests
     }
 
     [Fact]
-    public async Task ResolvesToken_ForRecordClientId_AndRouteScope()
+    public async Task ResolvesToken_ForRecordClientId_AndAuthSettingsScope()
     {
         var h = CreateSut();
 
-        // PDS route → scope "ship-full-access"; credential keyed by the record's own clientId.
+        // Credential keyed by the record's own clientId; scope comes from AuthSettings, not the route.
         await h.Sut.SendAsync(FhirOperation.Post, "client-x", "Patient",
             jsonPayload: """{"resourceType":"Patient"}""", shipService: "PDS");
 
         Assert.Equal("client-x", h.CapturedClientId);
-        Assert.Equal("ship-full-access", h.CapturedScope);
+        Assert.Equal("auth-scope", h.CapturedScope);
     }
 
     [Fact]
-    public async Task BlankRouteScope_FallsBackToAuthSettingsScope()
+    public async Task Scope_ComesFromAuthSettings_RegardlessOfRoute()
     {
-        var routing = Routing(defaultScope: null!);   // Default route has no scope
-        var h = CreateSut(routing: routing,
-            auth: new AuthSettings { TokenEndpoint = "https://identity/token", ClientId = "cfg", ClientSecret = "s", Scope = "auth-scope" });
+        // Authorization is never shipService-specific: the AuthSettings scope is used whether the
+        // request routes to a named API (PDS) or the Default route.
+        var h = CreateSut();
 
         await h.Sut.SendAsync(FhirOperation.Post, "client-a", "Observation",
-            jsonPayload: """{"resourceType":"Observation"}""");
+            jsonPayload: """{"resourceType":"Observation"}""");          // → Default route
+        var defaultScope = h.CapturedScope;
 
+        await h.Sut.SendAsync(FhirOperation.Post, "client-a", "Patient",
+            jsonPayload: """{"resourceType":"Patient"}""", shipService: "PDS");  // → PDS route
+
+        Assert.Equal("auth-scope", defaultScope);
         Assert.Equal("auth-scope", h.CapturedScope);
     }
 

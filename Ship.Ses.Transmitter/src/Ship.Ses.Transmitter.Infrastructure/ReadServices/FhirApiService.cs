@@ -130,8 +130,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
 
             try
             {
-                // Credential is resolved per clientId; scope is route-derived (routing only, not credential selection).
-                var scope = string.IsNullOrWhiteSpace(route.Scope) ? _authSettings.Value.Scope : route.Scope;
+                // Credential is resolved per clientId; scope comes from AuthSettings (authorization is the
+                // same across every SHIP target system — never route/shipService-specific).
+                var scope = _authSettings.Value.Scope;
                 var token = await _fhirTokenService.GetAccessTokenAsync(clientId, scope, cancellationToken);
                 request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
 

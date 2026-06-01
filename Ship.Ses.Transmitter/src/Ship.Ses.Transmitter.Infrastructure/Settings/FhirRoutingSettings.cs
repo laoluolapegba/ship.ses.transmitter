@@ -35,20 +35,14 @@ namespace Ship.Ses.Transmitter.Infrastructure.Settings
     {
         public string BaseUrl { get; set; } = default!;
         public int TimeoutSeconds { get; set; } = 30;
-        public FhirClientCertificateSettings? ClientCert { get; set; }
         public string? CallbackUrlTemplate { get; set; }
-        public string? Scope { get; set; }
+        // NOTE: outbound authorization is NOT route/shipService-specific. The same client credential and
+        // scope authenticate to every SHIP target system, so scope lives on AuthSettings — not here.
     }
 
     public sealed class FhirApiRouteSettings : FhirRouteSettings
     {
         public string Name { get; set; } = default!;
         public List<string> Resources { get; set; } = new();
-    }
-
-    public sealed class FhirClientCertificateSettings
-    {
-        public string Path { get; set; } = default!;
-        public string Password { get; set; } = default!;
     }
 }

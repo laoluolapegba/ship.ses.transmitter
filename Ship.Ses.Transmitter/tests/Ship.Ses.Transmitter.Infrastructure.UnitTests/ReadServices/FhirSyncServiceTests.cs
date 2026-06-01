@@ -24,11 +24,17 @@ public class FhirSyncServiceTests
     private readonly Mock<IFhirApiService> _api = new();
     private readonly Mock<IStagingUpdateWriter> _staging = new();
     private readonly Mock<IOptionsMonitor<FhirRoutingSettings>> _routing = new();
+    private readonly Mock<IClientCredentialProvider> _credentials = new();
 
     private readonly List<(string status, string message)> _persisted = new();
 
     public FhirSyncServiceTests()
     {
+        // Default: every non-blank clientId is processable (Config-mode semantics). Individual tests can
+        // override IsClientKnown to exercise the valid-clients-only filter.
+        _credentials.Setup(c => c.IsClientKnown(It.IsAny<string>()))
+                    .Returns<string>(id => !string.IsNullOrWhiteSpace(id));
+
         _routing.Setup(m => m.CurrentValue).Returns(new FhirRoutingSettings
         {
             Default = new FhirRouteSettings { BaseUrl = "https://gateway/fhir", CallbackUrlTemplate = "https://cb/" }
@@ -55,7 +61,8 @@ public class FhirSyncServiceTests
         NullLogger<FhirSyncService>.Instance,
         _api.Object,
         _staging.Object,
-        _routing.Object);
+        _routing.Object,
+        _credentials.Object);
 
     private static PatientSyncRecord PendingPatient(string clientId = "client-a", string resourceId = "p1", int retryCount = 0) => new()
     {
@@ -197,6 +204,28 @@ public class FhirSyncServiceTests
         _api.Verify(a => a.SendAsync(
             It.IsAny<FhirOperation>(), "bad-client", It.IsAny<string>(), It.IsAny<string>(),
             It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+    }
+
+    [Fact]
+    public async Task ProcessPendingRecords_SkipsRecordsForUnknownClients_LeavesThemUntouched()
+    {
+        // Only "known-client" is loaded/valid; "unknown-client" is not (e.g. inactive or added post-startup).
+        SetupPending(
+            PendingPatient(clientId: "known-client", resourceId: "k1"),
+            PendingPatient(clientId: "unknown-client", resourceId: "u1"));
+        _credentials.Setup(c => c.IsClientKnown("known-client")).Returns(true);
+        _credentials.Setup(c => c.IsClientKnown("unknown-client")).Returns(false);
+        SetupSendAny().ReturnsAsync(Accepted());
+
+        var result = await CreateSut().ProcessPendingRecordsAsync<PatientSyncRecord>(CancellationToken.None);
+
+        Assert.Equal(1, result.Total);    // only the known client's record is processed
+        Assert.Equal(1, result.Synced);
+
+        // The unknown client's record is never sent and never persisted (left Pending, untouched).
+        _api.Verify(a => a.SendAsync(
+            It.IsAny<FhirOperation>(), "unknown-client", It.IsAny<string>(), It.IsAny<string>(),
+            It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
