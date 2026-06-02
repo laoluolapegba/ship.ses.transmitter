@@ -86,29 +86,26 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             services.AddHttpClient("FhirTokens");
             services.AddSingleton<IFhirTokenService, CachedFhirTokenService>();
 
-            // Credential source is feature-flagged (ClientCredentials:Source = "Config" | "Vault").
-            //   Config = single-client fallback via AuthSettings (default; supersedes the old TokenService).
-            //   Vault  = per-client secret read from secret/ses/clients/{clientId}/hmac.
-            services.Configure<ClientCredentialsOptions>(configuration.GetSection("ClientCredentials"));
-            var credOptions = configuration.GetSection("ClientCredentials").Get<ClientCredentialsOptions>() ?? new ClientCredentialsOptions();
-            if (string.Equals(credOptions.Source, "Vault", StringComparison.OrdinalIgnoreCase))
+            // Per-client outbound credentials come from Vault, configured via OS environment variables
+            // (VAULT_ADDR, VAULT_TOKEN, VAULT_HMAC_*) — the same mechanism the SeS Ingestor uses, so there
+            // is no appsettings section. All registered clients under the path prefix are discovered and
+            // read once at startup (no per-request Vault calls, no TTL). VAULT_ADDR/VAULT_TOKEN are
+            // required: the worker exits at startup if they are unset.
+            var vaultSettings = VaultClientSecretSettings.FromEnvironment();
+            if (!vaultSettings.IsConfigured)
+                throw new InvalidOperationException(
+                    "Vault is not configured: set the VAULT_ADDR and VAULT_TOKEN environment variables " +
+                    "(per-client outbound credentials are loaded from Vault at startup).");
+
+            services.AddSingleton(vaultSettings);
+            services.AddHttpClient("Vault", client =>
             {
-                services.AddHttpClient("Vault", (sp, client) =>
-                {
-                    var v = sp.GetRequiredService<IOptions<ClientCredentialsOptions>>().Value.Vault;
-                    if (!string.IsNullOrWhiteSpace(v.Address))
-                        client.BaseAddress = new Uri(v.Address);
-                    client.Timeout = TimeSpan.FromSeconds(v.RequestTimeoutSeconds > 0 ? v.RequestTimeoutSeconds : 10);
-                });
-                services.AddSingleton<IVaultSecretReader, HttpVaultSecretReader>();
-                services.AddSingleton<IClientCredentialProvider, VaultClientCredentialProvider>();
-                Console.WriteLine("ClientCredentials: using Vault provider.");
-            }
-            else
-            {
-                services.AddSingleton<IClientCredentialProvider, ConfigClientCredentialProvider>();
-                Console.WriteLine("ClientCredentials: using Config (single-client) provider.");
-            }
+                client.BaseAddress = new Uri(vaultSettings.Address!.TrimEnd('/') + "/");
+                client.Timeout = TimeSpan.FromSeconds(vaultSettings.RequestTimeoutSeconds);
+            });
+            services.AddSingleton<IVaultSecretReader, HttpVaultSecretReader>();
+            services.AddSingleton<IClientCredentialProvider, VaultClientCredentialProvider>();
+            Console.WriteLine($"ClientCredentials: Vault provider (env-configured) at {vaultSettings.Address}, prefix '{vaultSettings.ListPrefix()}'.");
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 

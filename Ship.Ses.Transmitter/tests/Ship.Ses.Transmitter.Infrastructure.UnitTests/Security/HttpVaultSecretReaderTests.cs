@@ -11,14 +11,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.UnitTests.Security;
 
 public class HttpVaultSecretReaderTests
 {
-    private static HttpVaultSecretReader CreateSut(CountingHttpMessageHandler handler, VaultOptions? vault = null)
+    private static HttpVaultSecretReader CreateSut(CountingHttpMessageHandler handler, VaultClientSecretSettings? settings = null)
     {
         var factory = new Mock<IHttpClientFactory>();
         factory.Setup(f => f.CreateClient(It.IsAny<string>()))
                .Returns(() => new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri("https://vault.local:8200") });
 
-        var opts = Options.Create(new ClientCredentialsOptions { Vault = vault ?? new VaultOptions { KvMount = "secret" } });
-        return new HttpVaultSecretReader(factory.Object, opts, NullLogger<HttpVaultSecretReader>.Instance);
+        return new HttpVaultSecretReader(factory.Object, settings ?? new VaultClientSecretSettings { Mount = "secret" }, NullLogger<HttpVaultSecretReader>.Instance);
     }
 
     private static HttpResponseMessage Kv2(string innerJson) => new(HttpStatusCode.OK)
@@ -47,7 +46,7 @@ public class HttpVaultSecretReaderTests
         HttpRequestMessage? captured = null;
         var handler = new CountingHttpMessageHandler(req => { captured = req; return Kv2("{\"clientSecret\":\"x\"}"); });
 
-        await CreateSut(handler, new VaultOptions { KvMount = "secret", Token = "vault-token-123" }).ReadAsync("p");
+        await CreateSut(handler, new VaultClientSecretSettings { Mount = "secret", Token = "vault-token-123" }).ReadAsync("p");
 
         Assert.True(captured!.Headers.TryGetValues("X-Vault-Token", out var values));
         Assert.Equal("vault-token-123", Assert.Single(values!));

@@ -202,9 +202,13 @@ both services retrieve the same way) and finalizes the routing/auth separation.
       loaded. Mirrors the Ingestor's `VaultClientHmacCredentialLoader`/registry. *(2026-06-01)*
 - [x] **Process valid clients only** — `FhirSyncService` skips records whose `clientId` is not in the loaded
       active set (left `Pending`); `IsClientKnown` on the provider. New/rotated clients need a **restart**. *(2026-06-01)*
-- [x] `VaultOptions`: added `KvVersion`/`StatusKey`/`IsActiveKey`/`IsRevokedKey`; removed `CacheTtlSeconds`.
-      Kept the Transmitter's own path prefix (`ses/clients/{clientId}/hmac`) — same mechanism as the Ingestor,
-      distinct secret (outbound OAuth vs inbound HMAC). *(2026-06-01)*
+- [x] **Vault config via OS env vars (Ingestor-identical), Vault-only** *(2026-06-02 — supersedes the
+      interim config-section approach)*: removed the `ClientCredentials` appsettings section and the `Config`
+      single-client fallback (`ConfigClientCredentialProvider` deleted). Settings now come from `VAULT_ADDR`,
+      `VAULT_TOKEN`, `VAULT_HMAC_*` (`VaultClientSecretSettings.FromEnvironment()`); `VAULT_ADDR`/`VAULT_TOKEN`
+      required → **worker exits at startup** if unset. Dropped `ClientIdKey` (folder name is the clientId) and
+      the secret-key fallback list. Kept the Transmitter's own prefix (`ses/clients/{clientId}/hmac`) — same
+      mechanism as the Ingestor, distinct secret (outbound OAuth vs inbound HMAC).
 - [x] **Authorization is not shipService-specific:** per-route `Scope` removed; `FhirApiService` uses
       `AuthSettings:Scope` (`ship-full-access`) for every target. Per-route `ClientCert` and the legacy
       `FhirApi` cert fields/`FhirClientCertificateSettings` removed. `FhirRouting:Default` retained. *(2026-06-01)*

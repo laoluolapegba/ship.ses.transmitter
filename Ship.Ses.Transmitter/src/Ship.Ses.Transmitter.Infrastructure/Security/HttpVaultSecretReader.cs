@@ -7,30 +7,29 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Options;
-using Ship.Ses.Transmitter.Infrastructure.Settings;
 
 namespace Ship.Ses.Transmitter.Infrastructure.Security
 {
     /// <summary>
     /// Reads secrets from HashiCorp Vault's KV engine over HTTP. For KV v2:
-    /// <c>GET {Address}/v1/{KvMount}/data/{path}</c> to read and
-    /// <c>GET {Address}/v1/{KvMount}/metadata/{prefix}?list=true</c> to discover clients.
+    /// <c>GET {Address}/v1/{Mount}/data/{path}</c> to read and
+    /// <c>GET {Address}/v1/{Mount}/metadata/{prefix}?list=true</c> to discover clients.
     /// For KV v1 the <c>data</c>/<c>metadata</c> segments are omitted. An <c>X-Vault-Token</c> header is sent.
+    /// Connection settings come from OS environment variables (<see cref="VaultClientSecretSettings"/>).
     /// </summary>
     public sealed class HttpVaultSecretReader : IVaultSecretReader
     {
         private readonly HttpClient _http;
-        private readonly VaultOptions _opts;
+        private readonly VaultClientSecretSettings _opts;
         private readonly ILogger<HttpVaultSecretReader> _log;
 
         public HttpVaultSecretReader(
             IHttpClientFactory httpClientFactory,
-            IOptions<ClientCredentialsOptions> opts,
+            VaultClientSecretSettings settings,
             ILogger<HttpVaultSecretReader> log)
         {
             _http = httpClientFactory.CreateClient("Vault");
-            _opts = (opts?.Value ?? throw new ArgumentNullException(nameof(opts))).Vault;
+            _opts = settings ?? throw new ArgumentNullException(nameof(settings));
             _log = log;
         }
 
@@ -39,7 +38,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             if (string.IsNullOrWhiteSpace(path))
                 throw new ArgumentException("Secret path is required.", nameof(path));
 
-            var mount = _opts.KvMount.Trim('/');
+            var mount = _opts.Mount.Trim('/');
             var rel = path.TrimStart('/');
             var requestUri = _opts.KvVersion == 2 ? $"v1/{mount}/data/{rel}" : $"v1/{mount}/{rel}";
 
@@ -85,7 +84,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
 
         public async Task<IReadOnlyList<string>> ListClientIdsAsync(string listPrefix, CancellationToken ct = default)
         {
-            var mount = _opts.KvMount.Trim('/');
+            var mount = _opts.Mount.Trim('/');
             var prefix = (listPrefix ?? string.Empty).Trim('/');
             var requestUri = _opts.KvVersion == 2 ? $"v1/{mount}/metadata/{prefix}" : $"v1/{mount}/{prefix}";
 

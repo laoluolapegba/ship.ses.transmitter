@@ -8,9 +8,9 @@ using Ship.Ses.Transmitter.Infrastructure.Settings;
 namespace Ship.Ses.Transmitter.Infrastructure.UnitTests.Security;
 
 /// <summary>
-/// Pins the startup-load model: clients are discovered by listing the prefix and read once into memory.
-/// Only active, non-revoked clients with a usable secret are loaded; there are no per-request Vault calls.
-/// (Consistent with the Ingestor's VaultClientHmacCredentialLoader.)
+/// Pins the startup-load model (mirrors the SeS Ingestor): clients are discovered by listing the prefix
+/// and read once into memory; only active, non-revoked clients with a usable secret are loaded; the Vault
+/// folder name is the clientId; Vault must be configured (env) or startup fails.
 /// </summary>
 public class VaultClientCredentialProviderTests
 {
@@ -20,12 +20,14 @@ public class VaultClientCredentialProviderTests
         GrantType = "client_credentials"
     };
 
-    private static (VaultClientCredentialProvider sut, Mock<IVaultSecretReader> reader) CreateSut(VaultOptions? vault = null)
+    private static VaultClientSecretSettings Configured(VaultClientSecretSettings? s = null) =>
+        (s ?? new VaultClientSecretSettings()) with { Address = "https://vault.local", Token = "t" };
+
+    private static (VaultClientCredentialProvider sut, Mock<IVaultSecretReader> reader) CreateSut(VaultClientSecretSettings? settings = null)
     {
         var reader = new Mock<IVaultSecretReader>();
-        var opts = Options.Create(new ClientCredentialsOptions { Source = "Vault", Vault = vault ?? new VaultOptions() });
         var sut = new VaultClientCredentialProvider(
-            reader.Object, opts, Options.Create(AuthDefaults),
+            reader.Object, settings ?? Configured(), Options.Create(AuthDefaults),
             NullLogger<VaultClientCredentialProvider>.Instance);
         return (sut, reader);
     }
@@ -45,11 +47,12 @@ public class VaultClientCredentialProviderTests
         reader.Setup(r => r.ReadAsync(path, It.IsAny<CancellationToken>())).ReturnsAsync(secret);
 
     [Fact]
-    public async Task Initialize_LoadsClient_MergesNonSecretDefaults_AndAppliesClientIdKey()
+    public async Task Initialize_LoadsClient_MergesNonSecretDefaults_FolderNameIsClientId()
     {
-        var (sut, reader) = CreateSut(new VaultOptions { PathTemplate = "ses/clients/{clientId}/hmac" });
+        var (sut, reader) = CreateSut();
         SetupList(reader, "lakeshore");
-        SetupRead(reader, "ses/clients/lakeshore/hmac", Secret(("clientSecret", "s3cr3t"), ("clientId", "lakeshore-oidc")));
+        // A clientId field in the secret is ignored — the folder name is authoritative (the Ingestor way).
+        SetupRead(reader, "ses/clients/lakeshore/hmac", Secret(("clientSecret", "s3cr3t"), ("clientId", "ignored-oidc")));
 
         await sut.InitializeAsync();
         var cred = await sut.GetAsync("lakeshore");
@@ -58,33 +61,7 @@ public class VaultClientCredentialProviderTests
         Assert.Equal("https://identity/token", cred.TokenEndpoint); // non-secret default
         Assert.Equal("client_credentials", cred.GrantType);          // non-secret default
         Assert.Equal("s3cr3t", cred.ClientSecret);                   // from Vault
-        Assert.Equal("lakeshore-oidc", cred.ClientId);               // from Vault (ClientIdKey)
-    }
-
-    [Fact]
-    public async Task Initialize_NoClientIdInSecret_DefaultsToFolderClientId()
-    {
-        var (sut, reader) = CreateSut();
-        SetupList(reader, "client-a");
-        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync(Secret(("clientSecret", "abc")));
-
-        await sut.InitializeAsync();
-
-        Assert.Equal("client-a", (await sut.GetAsync("client-a")).ClientId);
-    }
-
-    [Fact]
-    public async Task Initialize_SecretKeyFallback_Hmac()
-    {
-        var (sut, reader) = CreateSut(new VaultOptions { SecretKey = "clientSecret" });
-        SetupList(reader, "c");
-        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync(Secret(("hmac", "hmac-key"))); // no clientSecret → falls back to hmac
-
-        await sut.InitializeAsync();
-
-        Assert.Equal("hmac-key", (await sut.GetAsync("c")).ClientSecret);
+        Assert.Equal("lakeshore", cred.ClientId);                    // folder name, not the secret's clientId field
     }
 
     [Fact]
@@ -100,6 +77,32 @@ public class VaultClientCredentialProviderTests
         await sut.GetAsync("c"); // served from memory
 
         reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Initialize_HonorsConfiguredSecretKey()
+    {
+        var (sut, reader) = CreateSut(Configured(new VaultClientSecretSettings { SecretKey = "hmac" }));
+        SetupList(reader, "c");
+        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+              .ReturnsAsync(Secret(("hmac", "hmac-key")));
+
+        await sut.InitializeAsync();
+
+        Assert.Equal("hmac-key", (await sut.GetAsync("c")).ClientSecret);
+    }
+
+    [Fact]
+    public async Task Initialize_MissingSecretField_SkipsClient()
+    {
+        var (sut, reader) = CreateSut();
+        SetupList(reader, "c");
+        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+              .ReturnsAsync(Secret(("somethingElse", "x"))); // no clientSecret
+
+        await sut.InitializeAsync();
+
+        Assert.False(sut.IsClientKnown("c"));
     }
 
     [Theory]
@@ -142,6 +145,14 @@ public class VaultClientCredentialProviderTests
 
         Assert.False(sut.IsClientKnown("anyone"));
         reader.Verify(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Initialize_NotConfigured_Throws()
+    {
+        // No VAULT_ADDR / VAULT_TOKEN → fail fast at startup.
+        var (sut, _) = CreateSut(new VaultClientSecretSettings());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => sut.InitializeAsync());
     }
 
     [Fact]

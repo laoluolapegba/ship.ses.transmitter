@@ -27,7 +27,7 @@ each dependency once — differences are called out explicitly below.
 | **EMR staging DB** (MySQL/PostgreSQL/SqlServer, EF) | Marking staged rows submitted/failed | **Yes** | App fails to start if `AppSettings:EmrDb` is misconfigured. |
 | **SHIP Admin API** | Tenant heartbeat, metrics, sync enable/disable | Only when `SeSClient:UseShipAdminApi=true` (default) | Heartbeat/metrics fail; worker self-pauses if it can't confirm the tenant is active. |
 | **SHIP server DB** (EF) | Client sync config when **not** using the Admin API | Only when `SeSClient:UseShipAdminApi=false` | App fails to start (DbContext) in DirectDB mode. |
-| **HashiCorp Vault** | Per-client outbound credentials, loaded once at startup | Only when `ClientCredentials:Source=Vault` | 0 clients loaded → every record skipped (left `Pending`). |
+| **HashiCorp Vault** | Per-client outbound credentials, loaded once at startup | **Yes** (env-configured) | Worker **exits at startup** if `VAULT_ADDR`/`VAULT_TOKEN` unset; if reachable but 0 clients, every record is skipped (left `Pending`). |
 
 ---
 
@@ -46,10 +46,10 @@ Configuration is layered; later sources override earlier ones:
 .NET configuration keys use a **double underscore `__`** as the section separator:
 `AuthSettings:ClientSecret` → `AuthSettings__ClientSecret`.
 
-> **Difference from the Ingestor:** the Ingestor reads its Vault connection from **plain OS env vars**
-> (`VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_HMAC_*`). The **Transmitter keeps Vault under its config section**
-> (`ClientCredentials:Vault:*`, i.e. `ClientCredentials__Vault__*`). The *retrieval mechanism* is the same
-> (discover + load all clients once at startup); only the configuration surface differs. See §3.5.
+> **Vault is configured exactly like the Ingestor:** plain OS env vars (`VAULT_ADDR`, `VAULT_TOKEN`,
+> `VAULT_HMAC_*`) — **not** the `__` config convention, and there is **no `appsettings` section**. The only
+> difference is the path prefix (`ses/clients/...` vs the Ingestor's `emr-clients/...`). `VAULT_ADDR`/`VAULT_TOKEN`
+> are required — the worker **exits at startup** if they are unset. See §3.5.
 
 > Never put client secrets, DB passwords, or the Vault token into `appsettings.json`. Use env vars /
 > Kubernetes Secrets. See [`docs/multi-client/SECRETS-AND-CONFIG.md`](docs/multi-client/SECRETS-AND-CONFIG.md).
@@ -83,11 +83,10 @@ scope authenticate to every SHIP target system (PDS, SCR, …).
 
 | Variable | Required | Default (appsettings) | Description |
 |---|---|---|---|
-| `AuthSettings__TokenEndpoint` | **Yes — hard-fails at startup if blank** | identity URL | SHIP identity token endpoint. |
+| `AuthSettings__TokenEndpoint` | **Yes — hard-fails at startup if blank** | identity URL | SHIP identity token endpoint (used per client). |
 | `AuthSettings__Scope` | **Yes — hard-fails at startup if blank** | `ship-full-access` | Outbound authorization scope (every target). |
 | `AuthSettings__GrantType` | No | `client_credentials` | OAuth grant type. |
-| `AuthSettings__ClientId` | Only when `ClientCredentials:Source=Config` | `lakeshore` | Single-client fallback client id. |
-| `AuthSettings__ClientSecret` | Only when `Source=Config` | *(blank)* | **Secret.** Single-client fallback secret. Unused when `Source=Vault`. |
+| `AuthSettings__ClientId` / `__ClientSecret` | No | — | **No longer used** — outbound credentials come from Vault per client (§3.5). May be left blank/removed. |
 
 ### 3.4 FHIR routing — section `FhirRouting`
 
@@ -102,27 +101,27 @@ Routing only (endpoint/timeout/callback) — **never credentials**. `Default` is
 | `FhirRouting__Apis__{n}__Resources__{m}` | No | Resource types routed to this target. |
 | `FhirRouting__Apis__{n}__TimeoutSeconds` | No | Per-target timeout. |
 
-### 3.5 Per-client credentials (Vault) — section `ClientCredentials`
+### 3.5 Per-client credentials (Vault) — plain OS env vars
 
-Feature-flagged by `ClientCredentials:Source`. **`Vault` loads every client once at startup** (discover by
-listing the prefix + read each secret), keeps them in memory (no per-request calls, no TTL), and processes
-**only active, non-revoked** clients. **Adding or rotating a client requires a restart.** The Vault token
-needs `list` on the prefix and `read` on the client paths.
+Per-client outbound credentials come **only from Vault**, configured via **plain OS env vars** (not the `__`
+convention, no `appsettings` section) — same as the Ingestor. Every client is discovered (by listing the
+prefix) and read **once at startup** into memory (no per-request calls, no TTL); **only active, non-revoked**
+clients are loaded, and the loaded set is logged. **Adding or rotating a client requires a restart.** The
+Vault token needs `list` on the prefix and `read` on the client paths. There is **no `Config` fallback** —
+`VAULT_ADDR`/`VAULT_TOKEN` are required and the worker **exits at startup** if either is unset.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `ClientCredentials__Source` | No | `Config` | `Config` (single-client fallback via `AuthSettings`) or `Vault`. |
-| `ClientCredentials__Vault__Address` | **Yes (when `Source=Vault`)** | — | Vault base URL, e.g. `https://vault.internal:8200`. |
-| `ClientCredentials__Vault__Token` | **Yes (when `Source=Vault`)** | — | Vault token. **Secret.** Needs `list` + `read` (see §4.3). |
-| `ClientCredentials__Vault__KvMount` | No | `secret` | KV mount point. |
-| `ClientCredentials__Vault__KvVersion` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `ClientCredentials__Vault__PathTemplate` | No | `ses/clients/{clientId}/hmac` | **Logical** per-client path; `{clientId}` substituted. Do **not** include `data`/`metadata`. The folder name is the clientId. |
-| `ClientCredentials__Vault__SecretKey` | No | `clientSecret` | Field holding the client secret (fallbacks: `client_secret`, `hmac`, `secret`). |
-| `ClientCredentials__Vault__ClientIdKey` | No | `clientId` | Optional field for the outbound `client_id`; defaults to the folder clientId. |
-| `ClientCredentials__Vault__StatusKey` | No | `status` | Optional; `revoked`/`inactive` disables the client. |
-| `ClientCredentials__Vault__IsActiveKey` | No | `isActive` | Optional boolean; `false` disables the client. |
-| `ClientCredentials__Vault__IsRevokedKey` | No | `isRevoked` | Optional boolean; `true` disables the client. |
-| `ClientCredentials__Vault__RequestTimeoutSeconds` | No | `10` | Vault HTTP timeout. |
+| `VAULT_ADDR` | **Yes — worker exits if unset** | — | Vault base URL, e.g. `https://vault.internal:8200`. |
+| `VAULT_TOKEN` | **Yes — worker exits if unset** | — | Vault token. **Secret.** Needs `list` + `read` (see §4.3). |
+| `VAULT_HMAC_MOUNT` | No | `secret` | KV mount point. |
+| `VAULT_HMAC_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
+| `VAULT_HMAC_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_HMAC_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
+| `VAULT_HMAC_STATUS_KEY` | No | `status` | `revoked`/`inactive` disables the client. |
+| `VAULT_HMAC_IS_ACTIVE_KEY` | No | `isActive` | `false` disables the client. |
+| `VAULT_HMAC_IS_REVOKED_KEY` | No | `isRevoked` | `true` disables the client. |
+| `VAULT_HMAC_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 
 ### 3.6 MongoDB — section `SourceDbSettings`
 
@@ -175,10 +174,11 @@ Provision a database and a read/write user. Supply `SourceDbSettings__Connection
 Set `AuthSettings__TokenEndpoint` to the identity token endpoint and the `FhirRouting` base URLs to the
 gateway/PDS/SCR endpoints. Outbound tokens are acquired per client and cached per `(clientId, scope)`.
 
-### 4.3 Vault — per-client outbound credentials (`Source=Vault`)
+### 4.3 Vault — per-client outbound credentials (env-configured; §3.5)
 
-The Transmitter reads all client secrets **once at startup** (mirroring the Ingestor). The **folder name is
-the ClientId** (the value carried on each record) and the secret holds the outbound OAuth `clientSecret`.
+The Transmitter reads all client secrets **once at startup** (mirroring the Ingestor), configured via the
+`VAULT_*` env vars in §3.5. The **folder name is the ClientId** (the value carried on each record) and the
+secret holds the outbound OAuth `clientSecret`.
 
 **Store each client (KV v2):**
 ```bash
@@ -207,15 +207,16 @@ path "secret/metadata/ses/clients" { capabilities = ["list"] }
 
 The worker stops at boot (rather than failing mid-run) when any of these is misconfigured:
 
+- `VAULT_ADDR` or `VAULT_TOKEN` unset (Vault is the only outbound-credential source).
 - `FhirRouting:Default:BaseUrl` blank, or any `FhirRouting:Apis` entry missing `Name`/`BaseUrl`.
 - `AuthSettings:TokenEndpoint` or `AuthSettings:Scope` blank.
 - `AppSettings:ShipServerSqlDb` / `EmrDb` missing a `DbType`.
 - `SeSClient:TenantId` (and legacy `ClientId`) both blank.
 - Neither `FhirRouting` nor a legacy `FhirApi` block present.
 
-**Non-fatal:** if `Source=Vault` and Vault is unreachable or returns 0 clients, the startup load logs a loud
-warning and loads nothing — every record is then **skipped (left Pending)** until the issue is fixed and the
-worker restarts. (Flip to hard-fail if your policy prefers.)
+**Non-fatal:** if Vault is **reachable** but returns 0 clients (or the token lacks `list`/`read`), the
+startup load logs a loud warning and loads nothing — every record is then **skipped (left Pending)** until
+the issue is fixed and the worker restarts. (Missing `VAULT_ADDR`/`VAULT_TOKEN`, by contrast, hard-fails.)
 
 ---
 
@@ -233,19 +234,19 @@ worker restarts. (Flip to hard-fail if your policy prefers.)
 
 ## 7. Startup logs to verify a good deployment
 
-A healthy start (with `Source=Vault`) logs the mode, the Vault load result, and each worker starting:
+A healthy start logs the Vault endpoint, the load result, and each worker starting:
 
 ```
-ClientCredentials: using Vault provider.
+ClientCredentials: Vault provider (env-configured) at https://vault.internal:8200, prefix 'ses/clients'.
 FeatureFlag: Using SHIP Admin API adapters (HTTP).
-🔐 Vault credential load: discovering clients at mount 'secret' (KV v2) under prefix 'ses/clients'…
-🔐 Vault credential load complete: 3 active client(s) loaded (0 skipped). Clients: lakeshore, emr-b, emr-c
+🔐 Vault credential load: discovering clients at https://vault.internal:8200 (mount 'secret', KV v2) under prefix 'ses/clients'…
+🔐 Vault credential load complete: 3 active client(s) loaded, 0 skipped (of 3 discovered). Loaded: lakeshore, emr-b, emr-c
 ▶️ Starting Resources FHIR Sync Worker (client=lakeshore)…
 🛰️ EMR Callback Worker started …
 🛰️ StatusProbeWorker started …
 ```
 
-- `ClientCredentials: using Config (single-client) provider.` — Config mode (no Vault).
+- App **exits immediately** with the `Vault is not configured` message if `VAULT_ADDR`/`VAULT_TOKEN` are unset.
 - `🔐 Vault credential load found no registered clients …` — Vault reachable but empty, or the token lacks
   `list`/`read`. No records will be processed until fixed + restarted.
 - `⏭️ Skipped N … record(s) for unknown/inactive client(s) …` — those clients aren't loaded (inactive,
@@ -256,12 +257,12 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 ## 8. Pre-deployment checklist
 
 - [ ] `SeSClient__TenantId` set to the real tenant.
-- [ ] `AuthSettings__TokenEndpoint` + `__Scope` set; `__ClientSecret` (Config mode) or Vault (below).
+- [ ] `AuthSettings__TokenEndpoint` + `__Scope` set.
 - [ ] `FhirRouting__Default__BaseUrl` and each `Apis` entry's `Name`/`BaseUrl` set.
 - [ ] `SourceDbSettings__ConnectionString` + `__DatabaseName` point at the real Mongo.
 - [ ] `AppSettings__EmrDb__*` (and `ShipServerSqlDb__*` if `UseShipAdminApi=false`) set.
 - [ ] `ShipAdminApi__BaseUrl`, `ShipAdminAuth__TokenUrl`/`__TenantId`/`__ClientSecret` set (Admin-API mode).
-- [ ] If `Source=Vault`: `ClientCredentials__Vault__Address` + `__Token` set; token has `list` + `read` (§4.3);
+- [ ] `VAULT_ADDR` + `VAULT_TOKEN` set (worker exits otherwise); token has `list` + `read` (§4.3);
       at least one active client secret exists under `ses/clients/`.
 - [ ] Each Vault client folder name equals the `clientId` carried on the records.
 

@@ -10,19 +10,19 @@ using Ship.Ses.Transmitter.Infrastructure.Settings;
 namespace Ship.Ses.Transmitter.Infrastructure.Security
 {
     /// <summary>
-    /// Resolves per-client outbound credentials from Vault, mirroring the Ingestor's model so DevOps
-    /// configures Vault clients once. Vault is the source of truth for the client set: at startup
-    /// (<see cref="InitializeAsync"/>) every client under the configured prefix is discovered and read,
-    /// and only <b>active, non-revoked</b> clients with a usable secret are loaded into memory. There are
-    /// no per-request Vault calls and no TTL; adding or rotating a client requires a restart. Non-secret
-    /// material (token endpoint, grant type) comes from <see cref="AuthSettings"/>.
+    /// Resolves per-client outbound credentials from Vault, mirroring the SeS Ingestor so DevOps configures
+    /// Vault clients once. Vault is the source of truth for the client set: at startup
+    /// (<see cref="InitializeAsync"/>) every client under the configured prefix is discovered and read, and
+    /// only <b>active, non-revoked</b> clients with a usable secret are loaded into memory. There are no
+    /// per-request Vault calls and no TTL; adding or rotating a client requires a restart. Connection
+    /// settings come from OS environment variables (<see cref="VaultClientSecretSettings"/>); non-secret
+    /// material (token endpoint, grant type) comes from <see cref="AuthSettings"/>. The Vault folder name is
+    /// the clientId; the outbound <c>client_id</c> is that same value (no override key).
     /// </summary>
     public sealed class VaultClientCredentialProvider : IClientCredentialProvider
     {
-        private static readonly string[] SecretKeyFallbacks = { "clientSecret", "client_secret", "hmac", "secret" };
-
         private readonly IVaultSecretReader _reader;
-        private readonly VaultOptions _vault;
+        private readonly VaultClientSecretSettings _vault;
         private readonly AuthSettings _authDefaults;
         private readonly ILogger<VaultClientCredentialProvider> _log;
 
@@ -31,12 +31,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
 
         public VaultClientCredentialProvider(
             IVaultSecretReader reader,
-            IOptions<ClientCredentialsOptions> options,
+            VaultClientSecretSettings settings,
             IOptions<AuthSettings> authDefaults,
             ILogger<VaultClientCredentialProvider> log)
         {
             _reader = reader;
-            _vault = (options?.Value ?? throw new ArgumentNullException(nameof(options))).Vault;
+            _vault = settings ?? throw new ArgumentNullException(nameof(settings));
             _authDefaults = authDefaults?.Value ?? throw new ArgumentNullException(nameof(authDefaults));
             _log = log;
         }
@@ -46,9 +46,15 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
 
         public async Task InitializeAsync(CancellationToken ct = default)
         {
+            // Fail fast: Vault is mandatory and configured via OS env vars (VAULT_ADDR / VAULT_TOKEN).
+            if (!_vault.IsConfigured)
+                throw new InvalidOperationException(
+                    "Vault is not configured: set the VAULT_ADDR and VAULT_TOKEN environment variables. " +
+                    "Per-client outbound credentials are loaded from Vault at startup.");
+
             var prefix = _vault.ListPrefix();
-            _log.LogInformation("🔐 Vault credential load: discovering clients at mount '{Mount}' (KV v{Kv}) under prefix '{Prefix}'…",
-                _vault.KvMount, _vault.KvVersion, prefix);
+            _log.LogInformation("🔐 Vault credential load: discovering clients at {Address} (mount '{Mount}', KV v{Kv}) under prefix '{Prefix}'…",
+                _vault.Address, _vault.Mount, _vault.KvVersion, prefix);
 
             var clientIds = await _reader.ListClientIdsAsync(prefix, ct).ConfigureAwait(false);
             if (clientIds.Count == 0)
@@ -74,8 +80,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             }
 
             _clients = loaded;
-            _log.LogInformation("🔐 Vault credential load complete: {Count} active client(s) loaded ({Skipped} skipped). Clients: {Clients}",
-                loaded.Count, skipped, string.Join(", ", loaded.Keys));
+            _log.LogInformation("🔐 Vault credential load complete: {Loaded} active client(s) loaded, {Skipped} skipped (of {Discovered} discovered). Loaded: {Clients}",
+                loaded.Count, skipped, clientIds.Count, string.Join(", ", loaded.Keys));
         }
 
         public Task<ClientCredential> GetAsync(string clientId, CancellationToken ct = default)
@@ -95,7 +101,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             !string.IsNullOrWhiteSpace(clientId) && _clients.ContainsKey(clientId);
 
         // Reads one client's secret and builds its credential, or returns a skip reason. A client is
-        // loaded only when it is active, not revoked, and has a usable secret.
+        // loaded only when it is active, not revoked, and has a usable secret. The folder name is the clientId.
         private async Task<(ClientCredential? cred, string? reason)> TryLoadAsync(string clientId, CancellationToken ct)
         {
             IReadOnlyDictionary<string, string>? secret;
@@ -111,36 +117,16 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             if (secret is null)
                 return (null, "secret path not found");
 
-            var clientSecret = ResolveSecret(secret);
-            if (string.IsNullOrWhiteSpace(clientSecret))
-                return (null, "no usable secret key");
+            if (!secret.TryGetValue(_vault.SecretKey, out var clientSecret) || string.IsNullOrWhiteSpace(clientSecret))
+                return (null, $"secret field '{_vault.SecretKey}' is missing or empty");
 
             var isRevoked = ReadBool(secret, _vault.IsRevokedKey) ?? StatusIs(secret, "revoked");
             var isActive = ReadBool(secret, _vault.IsActiveKey) ?? !StatusIs(secret, "inactive");
             if (isRevoked) return (null, "client is revoked");
             if (!isActive) return (null, "client is inactive");
 
-            var outboundClientId = (!string.IsNullOrWhiteSpace(_vault.ClientIdKey)
-                                    && secret.TryGetValue(_vault.ClientIdKey, out var cid)
-                                    && !string.IsNullOrWhiteSpace(cid))
-                ? cid
-                : clientId;
-
             var grant = string.IsNullOrWhiteSpace(_authDefaults.GrantType) ? "client_credentials" : _authDefaults.GrantType;
-            return (new ClientCredential(_authDefaults.TokenEndpoint, outboundClientId, clientSecret!, grant), null);
-        }
-
-        private string? ResolveSecret(IReadOnlyDictionary<string, string> secret)
-        {
-            if (!string.IsNullOrWhiteSpace(_vault.SecretKey) &&
-                secret.TryGetValue(_vault.SecretKey, out var configured) && !string.IsNullOrWhiteSpace(configured))
-                return configured;
-
-            foreach (var key in SecretKeyFallbacks)
-                if (secret.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
-                    return v;
-
-            return null;
+            return (new ClientCredential(_authDefaults.TokenEndpoint, clientId, clientSecret, grant), null);
         }
 
         private static bool? ReadBool(IReadOnlyDictionary<string, string> secret, string key)

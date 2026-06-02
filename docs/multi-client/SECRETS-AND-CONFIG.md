@@ -15,9 +15,12 @@ config — `Program.cs` already calls `AddEnvironmentVariables()`) or a secret s
 |---|---|---|
 | `AppSettings:ShipServerSqlDb:ConnectionString` | `AppSettings__ShipServerSqlDb__ConnectionString` | MySQL/PG connection string for the SHIP server DB. |
 | `AppSettings:EmrDb:ConnectionString` | `AppSettings__EmrDb__ConnectionString` | Connection string for the extractor staging DB. |
-| `AuthSettings:ClientSecret` | `AuthSettings__ClientSecret` | Outbound FHIR client secret. **Interim** — becomes per-`clientId` Vault lookup (Build Plan Phase 4). |
 | `ShipAdminAuth:ClientSecret` | `ShipAdminAuth__ClientSecret` | Tenant-level Admin API secret (stays tenant-scoped). |
+| `VAULT_TOKEN` | `VAULT_TOKEN` (plain OS env var) | **Required.** Vault token for per-client outbound credentials. See the Vault section below. |
 | `EmrCallback:Proxy:Auth:Username` / `Password` | `EmrCallback__Proxy__Auth__Username` / `__Password` | Already placeholder (`__from_secret_store__`); supply only when proxy auth is `Basic`. |
+
+> `AuthSettings:ClientSecret` is **no longer used** — outbound credentials come from Vault per client.
+> It may be left blank or removed from `appsettings.json`.
 
 ## Example (local development)
 
@@ -26,8 +29,9 @@ PowerShell:
 ```powershell
 $env:AppSettings__ShipServerSqlDb__ConnectionString = "Host=...;Port=3306;Database=...;Username=...;Password=..."
 $env:AppSettings__EmrDb__ConnectionString          = "Host=...;..."
-$env:AuthSettings__ClientSecret                    = "<dev-secret>"
 $env:ShipAdminAuth__ClientSecret                   = "<dev-admin-secret>"
+$env:VAULT_ADDR                                    = "https://vault.internal:8200"   # required (worker exits if unset)
+$env:VAULT_TOKEN                                   = "<vault-token>"                 # required
 dotnet run --project Ship.Ses.Transmitter/src/Ship.Ses.Transmitter.Service/Ship.Ses.Transmitter.Worker
 ```
 
@@ -43,59 +47,56 @@ In containers, inject these as environment variables from your orchestrator's se
   the same for every SHIP target system, no longer per FHIR route), timeouts, batch sizes, heartbeat
   intervals, resource lists.
 
-## Per-client credentials via Vault (Build Plan Phase 4 — implemented)
+## Per-client credentials via Vault (env-configured, Vault-only)
 
-Credential source is feature-flagged by `ClientCredentials:Source`:
+Outbound per-client credentials are resolved **only from Vault**, configured via **OS environment
+variables** — the exact mechanism the SeS Ingestor uses, so DevOps configures Vault clients once and both
+services retrieve the same way. **There is no `appsettings` section and no `Config` fallback.**
+`VAULT_ADDR` and `VAULT_TOKEN` are **required — the worker exits at startup if they are unset.**
 
-- **`Config`** (default) — single-client fallback: every `clientId` resolves to the `AuthSettings`
-  credential. Keeps current behaviour; no Vault required.
-- **`Vault`** — per-client. **Loaded once at startup**, mirroring the SeS Ingestor's model so DevOps
-  configures Vault clients once and both services retrieve the same way:
-  1. **Discover** every registered client by listing the prefix (`{KvMount}/metadata/{ListPrefix}` for
-     KV v2, where `ListPrefix` is everything in `PathTemplate` before `{clientId}` — default
-     `ses/clients`). The folder name is the `clientId`.
-  2. **Read** each client's secret from `{KvMount}/data/{PathTemplate}` (default
-     `secret/data/ses/clients/{clientId}/hmac`). Non-secret material (token endpoint, grant type) still
-     comes from `AuthSettings`.
-  3. **Filter** to valid clients only: a client is loaded only when it is **active and not revoked**
-     (`isActive`/`isRevoked` booleans, or `status` = `revoked`/`inactive`) and has a usable secret.
+At startup the provider:
 
-  There are **no per-request Vault calls and no TTL cache.** The worker processes only the clients
-  loaded at startup; records for unknown/inactive clients are skipped (left `Pending`). **Adding or
-  rotating a client requires a restart.** This is the difference from the previous per-request cached
-  lookup — credentials are now resolved entirely from memory after the startup load.
+1. **Discovers** every registered client by listing the prefix (`{Mount}/metadata/{ListPrefix}` for KV v2,
+   where `ListPrefix` is everything in the path template before `{clientId}` — default `ses/clients`).
+   The Vault folder name **is** the `clientId` (and the outbound `client_id`).
+2. **Reads** each client's secret from `{Mount}/data/{path}` (default `secret/data/ses/clients/{clientId}/hmac`).
+   Non-secret material (token endpoint, grant type) comes from `AuthSettings`.
+3. **Filters** to valid clients only: loaded only when **active and not revoked** (`isActive`/`isRevoked`
+   booleans, or `status` = `revoked`/`inactive`) and the secret field is present.
 
-The Vault token needs `list` capability on the prefix and `read` on the client paths, e.g.:
+The loaded client set, and the count skipped, are **reported in the startup log**. There are **no
+per-request Vault calls and no TTL cache** — the worker processes only the clients loaded at startup;
+records for unknown/inactive clients are skipped (left `Pending`). **Adding or rotating a client requires a
+restart.**
+
+The Vault token needs `list` on the prefix and `read` on the client paths, e.g.:
 
 ```hcl
 path "secret/data/ses/clients/*"   { capabilities = ["read"] }
 path "secret/metadata/ses/clients" { capabilities = ["list"] }
 ```
 
-`ClientCredentials` config (non-secret except the Vault token):
+Environment variables (plain OS env vars, **not** the `__` config convention):
 
-| Path | Env var | Notes |
-|---|---|---|
-| `ClientCredentials:Source` | `ClientCredentials__Source` | `Config` or `Vault`. |
-| `ClientCredentials:Vault:Address` | `ClientCredentials__Vault__Address` | e.g. `https://vault.internal:8200`. |
-| `ClientCredentials:Vault:Token` | `ClientCredentials__Vault__Token` | **Secret** — supply via env/secret store, never commit. Needs `list` + `read` (above). |
-| `ClientCredentials:Vault:KvMount` | `…__Vault__KvMount` | KV mount (default `secret`). |
-| `ClientCredentials:Vault:KvVersion` | `…__Vault__KvVersion` | KV engine version (default `2`); controls the `data`/`metadata` path segments. |
-| `ClientCredentials:Vault:PathTemplate` | `…__Vault__PathTemplate` | logical per-client path; `{clientId}` substituted (default `ses/clients/{clientId}/hmac`). Do **not** include `data`/`metadata`. |
-| `ClientCredentials:Vault:SecretKey` | `…__Vault__SecretKey` | secret field holding the client secret/HMAC (fallbacks: `clientSecret`,`client_secret`,`hmac`,`secret`). |
-| `ClientCredentials:Vault:ClientIdKey` | `…__Vault__ClientIdKey` | optional secret field for the outbound `client_id` (defaults to the folder `clientId`). |
-| `ClientCredentials:Vault:StatusKey` | `…__Vault__StatusKey` | optional field; `revoked`/`inactive` disables the client (default `status`). |
-| `ClientCredentials:Vault:IsActiveKey` | `…__Vault__IsActiveKey` | optional boolean field; `false` disables the client (default `isActive`). |
-| `ClientCredentials:Vault:IsRevokedKey` | `…__Vault__IsRevokedKey` | optional boolean field; `true` disables the client (default `isRevoked`). |
+| Variable | Required | Default | Notes |
+|---|---|---|---|
+| `VAULT_ADDR` | **Yes — worker exits if unset** | — | e.g. `https://vault.internal:8200`. |
+| `VAULT_TOKEN` | **Yes — worker exits if unset** | — | **Secret.** Needs `list` + `read` (above). Provision via Kubernetes auth / injected env. |
+| `VAULT_HMAC_MOUNT` | No | `secret` | KV mount. |
+| `VAULT_HMAC_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
+| `VAULT_HMAC_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | Logical per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_HMAC_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
+| `VAULT_HMAC_STATUS_KEY` | No | `status` | `revoked`/`inactive` disables the client. |
+| `VAULT_HMAC_IS_ACTIVE_KEY` | No | `isActive` | `false` disables the client. |
+| `VAULT_HMAC_IS_REVOKED_KEY` | No | `isRevoked` | `true` disables the client. |
+| `VAULT_HMAC_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 
-> The Transmitter uses the **same retrieval mechanism** as the Ingestor but its **own path prefix**
-> (`ses/clients/...`): the outbound OAuth client secret is distinct from the Ingestor's inbound HMAC key.
+> The Transmitter uses the **same env-var mechanism** as the Ingestor but its **own path prefix**
+> (`ses/clients/...`, vs the Ingestor's `emr-clients/...`): the outbound OAuth client secret is distinct
+> from the Ingestor's inbound HMAC key.
 >
-> When `Source=Vault`, `AuthSettings:ClientSecret` is no longer used (only `TokenEndpoint`/`GrantType`).
-> The Vault token must be provisioned to the workload (e.g. Kubernetes auth / injected env), not committed.
->
-> If Vault is unreachable or no clients are found at startup, the load is non-fatal: it logs a loud
-> warning and loads nothing, so every record is skipped until the issue is fixed and the worker restarts.
+> `AuthSettings:ClientId`/`ClientSecret` are **no longer used** (Vault is the only credential source); only
+> `AuthSettings:TokenEndpoint`/`GrantType`/`Scope` are read.
 
 ## Tenant vs client identity
 
