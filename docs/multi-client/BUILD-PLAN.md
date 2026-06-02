@@ -15,7 +15,7 @@ the build green.
 2. Credential resolution is **per `clientId`** only — never per target system.
 3. `targetSystem` / `ShipService` controls **routing/processing only**.
 4. Client-specific secrets must **not** live in instance `appsettings.json`.
-5. Client secrets resolve from Vault: `secret/ses/clients/{clientId}/hmac`.
+5. Client secrets resolve from Vault: `secret/ses/clients/{clientId}`.
 6. Non-secret settings may remain in configuration.
 
 ---
@@ -210,7 +210,7 @@ both services retrieve the same way) and finalizes the routing/auth separation.
       (`VAULT_MOUNT`/`VAULT_KV_VERSION`/`VAULT_PATH_TEMPLATE`/`VAULT_SECRET_KEY`). Dropped `ClientIdKey`
       (folder name is the clientId), the secret-key fallback list, and the **active/revoked/status** keys (a
       client is loaded if its secret is present). Kept the Transmitter's own prefix
-      (`ses/clients/{clientId}/hmac`) — same mechanism as the Ingestor, distinct secret (outbound OAuth vs inbound HMAC).
+      (`ses/clients/{clientId}`) — same mechanism as the Ingestor, distinct secret (outbound OAuth vs inbound HMAC).
 - [x] **Authorization is not shipService-specific:** per-route `Scope` removed; `FhirApiService` uses
       `AuthSettings:Scope` (`ship-full-access`) for every target. Per-route `ClientCert` and the legacy
       `FhirApi` cert fields/`FhirClientCertificateSettings` removed. `FhirRouting:Default` retained. *(2026-06-01)*

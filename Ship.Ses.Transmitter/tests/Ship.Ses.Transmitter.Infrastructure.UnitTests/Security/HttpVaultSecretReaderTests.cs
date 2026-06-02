@@ -31,13 +31,13 @@ public class HttpVaultSecretReaderTests
         HttpRequestMessage? captured = null;
         var handler = new CountingHttpMessageHandler(req => { captured = req; return Kv2("{\"clientSecret\":\"s3cr3t\",\"clientId\":\"lakeshore\"}"); });
 
-        var result = await CreateSut(handler).ReadAsync("ses/clients/lakeshore/hmac");
+        var result = await CreateSut(handler).ReadAsync("ses/clients/lakeshore");
 
         Assert.NotNull(result);
         Assert.Equal("s3cr3t", result!["clientSecret"]);
         Assert.Equal("lakeshore", result["clientId"]);
         // KV v2 path shape: /v1/{mount}/data/{path}
-        Assert.Equal("https://vault.local:8200/v1/secret/data/ses/clients/lakeshore/hmac", captured!.RequestUri!.ToString());
+        Assert.Equal("https://vault.local:8200/v1/secret/data/ses/clients/lakeshore", captured!.RequestUri!.ToString());
     }
 
     [Fact]

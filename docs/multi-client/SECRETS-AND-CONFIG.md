@@ -59,7 +59,7 @@ At startup the provider:
 1. **Discovers** every registered client by listing the prefix (`{Mount}/metadata/{ListPrefix}` for KV v2,
    where `ListPrefix` is everything in the path template before `{clientId}` — default `ses/clients`).
    The Vault folder name **is** the `clientId` (and the outbound `client_id`).
-2. **Reads** each client's secret from `{Mount}/data/{path}` (default `secret/data/ses/clients/{clientId}/hmac`).
+2. **Reads** each client's secret from `{Mount}/data/{path}` (default `secret/data/ses/clients/{clientId}`).
    Non-secret material (token endpoint, grant type) comes from `AuthSettings`.
 3. **Loads** each client whose secret field is present (skipping any path that can't be read).
 
@@ -83,7 +83,7 @@ Environment variables (plain OS env vars, **not** the `__` config convention):
 | `VAULT_TOKEN` | **Yes — worker exits if unset** | — | **Secret.** Needs `list` + `read` (above). Provision via Kubernetes auth / injected env. |
 | `VAULT_MOUNT` | No | `secret` | KV mount. |
 | `VAULT_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | Logical per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}` | Logical per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
 | `VAULT_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
 | `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 

@@ -20,7 +20,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
         public string? Token { get; init; }
         public string Mount { get; init; } = "secret";
         public int KvVersion { get; init; } = 2;
-        public string PathTemplate { get; init; } = "ses/clients/{clientId}/hmac";
+        public string PathTemplate { get; init; } = "ses/clients/{clientId}";
         public string SecretKey { get; init; } = "clientSecret";
         public int RequestTimeoutSeconds { get; init; } = 10;
 
@@ -43,7 +43,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             Token = Environment.GetEnvironmentVariable("VAULT_TOKEN"),
             Mount = Env("VAULT_MOUNT", "secret"),
             KvVersion = int.TryParse(Environment.GetEnvironmentVariable("VAULT_KV_VERSION"), out var v) ? v : 2,
-            PathTemplate = Env("VAULT_PATH_TEMPLATE", "ses/clients/{clientId}/hmac"),
+            PathTemplate = Env("VAULT_PATH_TEMPLATE", "ses/clients/{clientId}"),
             SecretKey = Env("VAULT_SECRET_KEY", "clientSecret"),
             RequestTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("VAULT_REQUEST_TIMEOUT_SECONDS"), out var t) && t > 0 ? t : 10
         };

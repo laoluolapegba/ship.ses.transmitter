@@ -115,7 +115,7 @@ The Vault token needs `list` on the prefix and `read` on the client paths. There
 | `VAULT_TOKEN` | **Yes — worker exits if unset** | — | Vault token. **Secret.** Needs `list` + `read` (see §4.3). |
 | `VAULT_MOUNT` | No | `secret` | KV mount point. |
 | `VAULT_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
 | `VAULT_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
 | `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 
@@ -178,8 +178,8 @@ secret holds the outbound OAuth `clientSecret`.
 
 **Store each client (KV v2):**
 ```bash
-# CLI hides the "data" segment; this writes to secret/data/ses/clients/lakeshore/hmac
-vault kv put secret/ses/clients/lakeshore/hmac \
+# CLI hides the "data" segment; this writes to secret/data/ses/clients/lakeshore
+vault kv put secret/ses/clients/lakeshore \
     clientSecret="<outbound-oauth-client-secret>"
 ```
 

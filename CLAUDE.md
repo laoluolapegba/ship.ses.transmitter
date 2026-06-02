@@ -64,7 +64,7 @@ Mongo types internal.
   enable/disable (legacy `ClientId` key still binds as a fallback). **Not** used to select outbound
   FHIR credentials — those are resolved per-record by `clientId`.
 - `ClientCredentials.Source` — `Config` (single-client fallback via `AuthSettings`) or `Vault`
-  (per-`clientId` secret from `secret/ses/clients/{clientId}/hmac`). See `docs/multi-client/SECRETS-AND-CONFIG.md`.
+  (per-`clientId` secret from `secret/ses/clients/{clientId}`). See `docs/multi-client/SECRETS-AND-CONFIG.md`.
 - `AuthSettings` — non-secret outbound FHIR defaults (token endpoint + grant type) and the `Config`
   fallback credential. Outbound tokens are acquired per-`clientId` via `IFhirTokenService` (cached per
   `(clientId, scope)`); scope is route-derived.
@@ -125,6 +125,6 @@ Design rules to honor:
 2. Credential resolution is **per `clientId` only**, not per target system.
 3. `targetSystem`/`shipService` is routing/processing only — never credential selection.
 4. Client-specific secrets must not live in instance `appsettings.json`.
-5. Client secrets resolve dynamically from Vault: `secret/ses/clients/{clientId}/hmac`.
+5. Client secrets resolve dynamically from Vault: `secret/ses/clients/{clientId}`.
 6. Non-secret settings may remain in configuration.
 </content>

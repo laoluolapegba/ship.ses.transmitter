@@ -52,7 +52,7 @@ public class VaultClientCredentialProviderTests
         var (sut, reader) = CreateSut();
         SetupList(reader, "lakeshore");
         // A clientId field in the secret is ignored — the folder name is authoritative (the Ingestor way).
-        SetupRead(reader, "ses/clients/lakeshore/hmac", Secret(("clientSecret", "s3cr3t"), ("clientId", "ignored-oidc")));
+        SetupRead(reader, "ses/clients/lakeshore", Secret(("clientSecret", "s3cr3t"), ("clientId", "ignored-oidc")));
 
         await sut.InitializeAsync();
         var cred = await sut.GetAsync("lakeshore");
@@ -110,8 +110,8 @@ public class VaultClientCredentialProviderTests
     {
         var (sut, reader) = CreateSut();
         SetupList(reader, "ok", "missing");
-        SetupRead(reader, "ses/clients/ok/hmac", Secret(("clientSecret", "s")));
-        SetupRead(reader, "ses/clients/missing/hmac", null);
+        SetupRead(reader, "ses/clients/ok", Secret(("clientSecret", "s")));
+        SetupRead(reader, "ses/clients/missing", null);
 
         await sut.InitializeAsync();
 

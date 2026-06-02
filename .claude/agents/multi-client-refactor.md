@@ -14,7 +14,7 @@ You implement the multi-client refactor of the **SeS Transmitter**. Read these b
 3. `targetSystem`/`ShipService` controls **routing/processing only**, never credential selection.
    Do not change `FhirRoutingSettings.ResolveRoute`'s routing logic.
 4. Client-specific secrets must not live in instance `appsettings.json`.
-5. Client secrets resolve from Vault at `secret/ses/clients/{clientId}/hmac`.
+5. Client secrets resolve from Vault at `secret/ses/clients/{clientId}`.
 6. Non-secret settings may remain in configuration.
 
 ## How to work
