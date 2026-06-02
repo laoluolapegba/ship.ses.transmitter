@@ -67,6 +67,11 @@
 >   secret **once** (`InitializeAsync`) into memory — no per-request calls, **no TTL cache**; only active,
 >   non-revoked clients are loaded; `FhirSyncService` processes valid clients only; new/rotated clients need a
 >   restart (Findings 1.2, 2.4). New `DEPLOYMENT.md` added. Suite: 3 Domain + 9 Application + 63 Infrastructure green.
+> - **2026-06-02** — New finding **4.5** (non-PDS probe `GET` gap): `StatusProbeWorker` probes via `GET`,
+>   but `FhirApiService` only builds a `GET` path for PDS, so non-PDS (e.g. SCR) records with no callback
+>   can't be probed and are abandoned — surfaced by an end-to-end ack-half log simulation. Logging tidy:
+>   `FhirSyncService` now labels the multi-resource generic pool as `GenericResourceSyncRecord` instead of
+>   listing ~140 `[FhirResource]` names.
 
 ---
 
@@ -147,6 +152,7 @@ design — `SeSClient:ClientId` is effectively a **tenant identity** and should 
 | 4.2 | `FhirApiService.SendAsync` | Token + scope were global; same bearer reused for every client/target. | One token for all clients/targets. | All clients shared one outbound identity. | ✅ **FIXED (2026-05-30, Phase 3; revised 2026-06-01):** token resolved by `clientId` via `IFhirTokenService` (cached per `(clientId, scope)`); same client credential **and same scope** (`AuthSettings.Scope`) across PDS/SCR per design #1–#3 — authorization is not shipService-specific. | High → resolved |
 | 4.3 | `Installers/WorkerServiceExtensions.cs` (`AddFhirApiClient`) | One named `HttpClient "FhirApi"` with `Default.BaseUrl` + single timeout; **client certificate from config was never applied** to the handler. | One HTTP client / one cert for all targets+clients. | mTLS cert config was dead (not wired); per-client/per-target cert impossible. | ✅ **Done (2026-05-30; finalized 2026-06-01):** dead `ClientCert` removed from `appsettings.json` **and** the `ClientCert`/`FhirClientCertificateSettings` types deleted (no longer needed by the legacy binder). If mTLS is later required, wire a handler that selects the **per-client** cert from Vault. | Medium → resolved (config) |
 | 4.4 | `FhirApiService.SendAsync` PDS branch (`:74`) | Hardcoded `"PDS"` string comparison and hardcoded `/api/v1/...` path shapes. | Target-specific logic embedded in code. | Adding/altering targets needs code changes; brittle. | Drive path templates from routing config; keep credential resolution separate (per client). | Low |
+| 4.5 | `FhirApiService.SendAsync` (non-PDS branch) + `StatusProbeWorker.ProbeOneAsync` | For non-PDS services the endpoint switch supports **POST only** (`_ => throw NotSupportedException`); the only `GET` path shape is the PDS one (`/api/v1/{type}/{id}`). But `StatusProbeWorker` resolves status by issuing a **`GET`** (`_fhir.SendAsync(FhirOperation.Get, …, shipService: ev.ShipService)`). | `GET` path shapes defined for PDS only. | A non-PDS (e.g. **SCR**) record that receives **no callback** can't be probed: the `GET` throws `NotSupportedException`, `ProbeOneAsync` retries then **abandons**, and its `StatusEvent` stays `PENDING`/`Abandoned` (never `SUCCESS`). Status resolution for non-PDS therefore relies **entirely on the async callback**; a missed callback is never recovered by the probe. Found via the ack-half simulation (2026-06-02). | Define a `GET` path shape for non-PDS routes (or make probe path/method routing config-driven), or short-circuit probing for services with no `GET` contract (mark such events so they aren't repeatedly attempted/abandoned). | Medium |
 
 ---
 
