@@ -105,22 +105,6 @@ public class VaultClientCredentialProviderTests
         Assert.False(sut.IsClientKnown("c"));
     }
 
-    [Theory]
-    [InlineData("isActive", "false")]
-    [InlineData("isRevoked", "true")]
-    public async Task Initialize_SkipsInactiveOrRevokedClients(string key, string value)
-    {
-        var (sut, reader) = CreateSut();
-        SetupList(reader, "c");
-        reader.Setup(r => r.ReadAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
-              .ReturnsAsync(Secret(("clientSecret", "s"), (key, value)));
-
-        await sut.InitializeAsync();
-
-        Assert.False(sut.IsClientKnown("c"));
-        await Assert.ThrowsAsync<InvalidOperationException>(() => sut.GetAsync("c"));
-    }
-
     [Fact]
     public async Task Initialize_SkipsClientsWithUnreadableSecret()
     {

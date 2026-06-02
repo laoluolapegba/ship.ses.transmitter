@@ -61,13 +61,12 @@ At startup the provider:
    The Vault folder name **is** the `clientId` (and the outbound `client_id`).
 2. **Reads** each client's secret from `{Mount}/data/{path}` (default `secret/data/ses/clients/{clientId}/hmac`).
    Non-secret material (token endpoint, grant type) comes from `AuthSettings`.
-3. **Filters** to valid clients only: loaded only when **active and not revoked** (`isActive`/`isRevoked`
-   booleans, or `status` = `revoked`/`inactive`) and the secret field is present.
+3. **Loads** each client whose secret field is present (skipping any path that can't be read).
 
 The loaded client set, and the count skipped, are **reported in the startup log**. There are **no
 per-request Vault calls and no TTL cache** — the worker processes only the clients loaded at startup;
-records for unknown/inactive clients are skipped (left `Pending`). **Adding or rotating a client requires a
-restart.**
+records for clients not loaded are skipped (left `Pending`). **Adding, removing or rotating a client
+requires a restart.**
 
 The Vault token needs `list` on the prefix and `read` on the client paths, e.g.:
 
@@ -82,14 +81,11 @@ Environment variables (plain OS env vars, **not** the `__` config convention):
 |---|---|---|---|
 | `VAULT_ADDR` | **Yes — worker exits if unset** | — | e.g. `https://vault.internal:8200`. |
 | `VAULT_TOKEN` | **Yes — worker exits if unset** | — | **Secret.** Needs `list` + `read` (above). Provision via Kubernetes auth / injected env. |
-| `VAULT_HMAC_MOUNT` | No | `secret` | KV mount. |
-| `VAULT_HMAC_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `VAULT_HMAC_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | Logical per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
-| `VAULT_HMAC_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
-| `VAULT_HMAC_STATUS_KEY` | No | `status` | `revoked`/`inactive` disables the client. |
-| `VAULT_HMAC_IS_ACTIVE_KEY` | No | `isActive` | `false` disables the client. |
-| `VAULT_HMAC_IS_REVOKED_KEY` | No | `isRevoked` | `true` disables the client. |
-| `VAULT_HMAC_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
+| `VAULT_MOUNT` | No | `secret` | KV mount. |
+| `VAULT_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
+| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | Logical per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
+| `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 
 > The Transmitter uses the **same env-var mechanism** as the Ingestor but its **own path prefix**
 > (`ses/clients/...`, vs the Ingestor's `emr-clients/...`): the outbound OAuth client secret is distinct

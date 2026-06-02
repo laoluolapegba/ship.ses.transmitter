@@ -67,14 +67,15 @@
 >   secret **once** (`InitializeAsync`) into memory — no per-request calls, **no TTL cache**; only active,
 >   non-revoked clients are loaded; `FhirSyncService` processes valid clients only; new/rotated clients need a
 >   restart (Findings 1.2, 2.4). New `DEPLOYMENT.md` added. Suite: 3 Domain + 9 Application + 63 Infrastructure green.
-> - **2026-06-02 (Vault → env-only, Ingestor-identical)** — Removed the `ClientCredentials` appsettings
->   section and the `Config` single-client fallback (`ConfigClientCredentialProvider` deleted). Vault is now
->   the **only** outbound-credential source, configured via **OS environment variables** (`VAULT_ADDR`,
->   `VAULT_TOKEN`, `VAULT_HMAC_*`) exactly like the Ingestor; `VAULT_ADDR`/`VAULT_TOKEN` are required and the
->   **worker exits at startup** if unset. Dropped the `ClientIdKey` override (folder name is the clientId) and
->   the secret-key fallback list (single `VAULT_HMAC_SECRET_KEY`, default `clientSecret`). Startup still lists
->   + loads all active clients into memory and reports them; only loaded clients are processed (Findings 1.2,
->   2.4). Docs updated (`SECRETS-AND-CONFIG.md`, `DEPLOYMENT.md`). Suite: 3 Domain + 9 Application + 58 Infrastructure green.
+> - **2026-06-02 (Vault → env-only, Ingestor-style)** — Removed the `ClientCredentials` appsettings section
+>   and the `Config` single-client fallback (`ConfigClientCredentialProvider` deleted). Vault is now the
+>   **only** outbound-credential source, configured via **OS environment variables** (`VAULT_ADDR`,
+>   `VAULT_TOKEN`, `VAULT_MOUNT`, `VAULT_KV_VERSION`, `VAULT_PATH_TEMPLATE`, `VAULT_SECRET_KEY`,
+>   `VAULT_REQUEST_TIMEOUT_SECONDS`); `VAULT_ADDR`/`VAULT_TOKEN` are required and the **worker exits at
+>   startup** if unset. Dropped the `ClientIdKey` override (folder name is the clientId), the secret-key
+>   fallback list, and the **active/revoked/status keys** (a client is loaded if its secret is present;
+>   add/remove/rotate ⇒ restart). Startup lists + loads all clients into memory and reports them; only loaded
+>   clients are processed (Findings 1.2, 2.4). Docs updated. Suite: 3 Domain + 9 Application + 56 Infrastructure green.
 > - **2026-06-02** — New finding **4.5** (non-PDS probe `GET` gap): `StatusProbeWorker` probes via `GET`,
 >   but `FhirApiService` only builds a `GET` path for PDS, so non-PDS (e.g. SCR) records with no callback
 >   can't be probed and are abandoned — surfaced by an end-to-end ack-half log simulation. Logging tidy:

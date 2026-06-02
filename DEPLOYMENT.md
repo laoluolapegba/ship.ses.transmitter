@@ -46,10 +46,9 @@ Configuration is layered; later sources override earlier ones:
 .NET configuration keys use a **double underscore `__`** as the section separator:
 `AuthSettings:ClientSecret` → `AuthSettings__ClientSecret`.
 
-> **Vault is configured exactly like the Ingestor:** plain OS env vars (`VAULT_ADDR`, `VAULT_TOKEN`,
-> `VAULT_HMAC_*`) — **not** the `__` config convention, and there is **no `appsettings` section**. The only
-> difference is the path prefix (`ses/clients/...` vs the Ingestor's `emr-clients/...`). `VAULT_ADDR`/`VAULT_TOKEN`
-> are required — the worker **exits at startup** if they are unset. See §3.5.
+> **Vault is configured like the Ingestor:** plain OS env vars (`VAULT_*`) — **not** the `__` config
+> convention, and there is **no `appsettings` section**; clients are discovered and loaded once at startup.
+> `VAULT_ADDR`/`VAULT_TOKEN` are required — the worker **exits at startup** if they are unset. See §3.5.
 
 > Never put client secrets, DB passwords, or the Vault token into `appsettings.json`. Use env vars /
 > Kubernetes Secrets. See [`docs/multi-client/SECRETS-AND-CONFIG.md`](docs/multi-client/SECRETS-AND-CONFIG.md).
@@ -105,23 +104,20 @@ Routing only (endpoint/timeout/callback) — **never credentials**. `Default` is
 
 Per-client outbound credentials come **only from Vault**, configured via **plain OS env vars** (not the `__`
 convention, no `appsettings` section) — same as the Ingestor. Every client is discovered (by listing the
-prefix) and read **once at startup** into memory (no per-request calls, no TTL); **only active, non-revoked**
-clients are loaded, and the loaded set is logged. **Adding or rotating a client requires a restart.** The
-Vault token needs `list` on the prefix and `read` on the client paths. There is **no `Config` fallback** —
+prefix) and read **once at startup** into memory (no per-request calls, no TTL); each client whose secret is
+present is loaded, and the loaded set is logged. **Adding, removing or rotating a client requires a restart.**
+The Vault token needs `list` on the prefix and `read` on the client paths. There is **no `Config` fallback** —
 `VAULT_ADDR`/`VAULT_TOKEN` are required and the worker **exits at startup** if either is unset.
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `VAULT_ADDR` | **Yes — worker exits if unset** | — | Vault base URL, e.g. `https://vault.internal:8200`. |
 | `VAULT_TOKEN` | **Yes — worker exits if unset** | — | Vault token. **Secret.** Needs `list` + `read` (see §4.3). |
-| `VAULT_HMAC_MOUNT` | No | `secret` | KV mount point. |
-| `VAULT_HMAC_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `VAULT_HMAC_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
-| `VAULT_HMAC_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
-| `VAULT_HMAC_STATUS_KEY` | No | `status` | `revoked`/`inactive` disables the client. |
-| `VAULT_HMAC_IS_ACTIVE_KEY` | No | `isActive` | `false` disables the client. |
-| `VAULT_HMAC_IS_REVOKED_KEY` | No | `isRevoked` | `true` disables the client. |
-| `VAULT_HMAC_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
+| `VAULT_MOUNT` | No | `secret` | KV mount point. |
+| `VAULT_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
+| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}/hmac` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
+| `VAULT_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
+| `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
 
 ### 3.6 MongoDB — section `SourceDbSettings`
 
@@ -184,8 +180,7 @@ secret holds the outbound OAuth `clientSecret`.
 ```bash
 # CLI hides the "data" segment; this writes to secret/data/ses/clients/lakeshore/hmac
 vault kv put secret/ses/clients/lakeshore/hmac \
-    clientSecret="<outbound-oauth-client-secret>" \
-    isActive=true
+    clientSecret="<outbound-oauth-client-secret>"
 ```
 
 > **Same mechanism as the Ingestor, own path.** The Transmitter's prefix is `ses/clients/...` and the secret
@@ -240,7 +235,7 @@ A healthy start logs the Vault endpoint, the load result, and each worker starti
 ClientCredentials: Vault provider (env-configured) at https://vault.internal:8200, prefix 'ses/clients'.
 FeatureFlag: Using SHIP Admin API adapters (HTTP).
 🔐 Vault credential load: discovering clients at https://vault.internal:8200 (mount 'secret', KV v2) under prefix 'ses/clients'…
-🔐 Vault credential load complete: 3 active client(s) loaded, 0 skipped (of 3 discovered). Loaded: lakeshore, emr-b, emr-c
+🔐 Vault credential load complete: 3 client(s) loaded, 0 skipped (of 3 discovered). Loaded: lakeshore, emr-b, emr-c
 ▶️ Starting Resources FHIR Sync Worker (client=lakeshore)…
 🛰️ EMR Callback Worker started …
 🛰️ StatusProbeWorker started …
@@ -249,8 +244,8 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 - App **exits immediately** with the `Vault is not configured` message if `VAULT_ADDR`/`VAULT_TOKEN` are unset.
 - `🔐 Vault credential load found no registered clients …` — Vault reachable but empty, or the token lacks
   `list`/`read`. No records will be processed until fixed + restarted.
-- `⏭️ Skipped N … record(s) for unknown/inactive client(s) …` — those clients aren't loaded (inactive,
-  revoked, or added after startup); their records stay `Pending`.
+- `⏭️ Skipped N … record(s) for client(s) not loaded from Vault …` — those clients weren't loaded (not
+  registered under the prefix, unreadable secret, or added after startup); their records stay `Pending`.
 
 ---
 
@@ -263,7 +258,7 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 - [ ] `AppSettings__EmrDb__*` (and `ShipServerSqlDb__*` if `UseShipAdminApi=false`) set.
 - [ ] `ShipAdminApi__BaseUrl`, `ShipAdminAuth__TokenUrl`/`__TenantId`/`__ClientSecret` set (Admin-API mode).
 - [ ] `VAULT_ADDR` + `VAULT_TOKEN` set (worker exits otherwise); token has `list` + `read` (§4.3);
-      at least one active client secret exists under `ses/clients/`.
+      at least one client secret exists under `ses/clients/`.
 - [ ] Each Vault client folder name equals the `clientId` carried on the records.
 
 ---
@@ -275,7 +270,7 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 | App exits at startup naming `AuthSettings`/`FhirRouting`/`AppSettings` | Required config blank | Set the named key (see §5) |
 | App exits: `SeSClient:TenantId … is required` | Tenant identity missing | Set `SeSClient__TenantId` |
 | Nothing transmitted; `Vault … found no registered clients` | Vault empty or token lacks `list`/`read` | Add secrets / fix policy / token, restart |
-| One client's records stay `Pending`, logged as skipped | Client inactive/revoked, or added after startup | Activate in Vault / restart to load it |
+| One client's records stay `Pending`, logged as skipped | Client not loaded (not under the prefix, unreadable secret, or added after startup) | Add/fix the Vault secret + restart |
 | All sends `401`/token errors | Identity endpoint/secret wrong, or per-client secret missing in Vault | Verify `AuthSettings`/Vault secret |
 | Records requeue then `Failed` | SHIP FHIR endpoint unreachable or rejecting | Check `FhirRouting` base URLs / SHIP health |
 | Worker self-pauses (`Client … not active`) | Admin API reports tenant inactive | Activate the tenant in SHIP Admin |

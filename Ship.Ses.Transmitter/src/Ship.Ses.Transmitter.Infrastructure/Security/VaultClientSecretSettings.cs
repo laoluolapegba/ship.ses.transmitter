@@ -22,9 +22,6 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
         public int KvVersion { get; init; } = 2;
         public string PathTemplate { get; init; } = "ses/clients/{clientId}/hmac";
         public string SecretKey { get; init; } = "clientSecret";
-        public string StatusKey { get; init; } = "status";
-        public string IsActiveKey { get; init; } = "isActive";
-        public string IsRevokedKey { get; init; } = "isRevoked";
         public int RequestTimeoutSeconds { get; init; } = 10;
 
         public bool IsConfigured => !string.IsNullOrWhiteSpace(Address) && !string.IsNullOrWhiteSpace(Token);
@@ -44,14 +41,11 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
         {
             Address = Environment.GetEnvironmentVariable("VAULT_ADDR"),
             Token = Environment.GetEnvironmentVariable("VAULT_TOKEN"),
-            Mount = Env("VAULT_HMAC_MOUNT", "secret"),
-            KvVersion = int.TryParse(Environment.GetEnvironmentVariable("VAULT_HMAC_KV_VERSION"), out var v) ? v : 2,
-            PathTemplate = Env("VAULT_HMAC_PATH_TEMPLATE", "ses/clients/{clientId}/hmac"),
-            SecretKey = Env("VAULT_HMAC_SECRET_KEY", "clientSecret"),
-            StatusKey = Env("VAULT_HMAC_STATUS_KEY", "status"),
-            IsActiveKey = Env("VAULT_HMAC_IS_ACTIVE_KEY", "isActive"),
-            IsRevokedKey = Env("VAULT_HMAC_IS_REVOKED_KEY", "isRevoked"),
-            RequestTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("VAULT_HMAC_REQUEST_TIMEOUT_SECONDS"), out var t) && t > 0 ? t : 10
+            Mount = Env("VAULT_MOUNT", "secret"),
+            KvVersion = int.TryParse(Environment.GetEnvironmentVariable("VAULT_KV_VERSION"), out var v) ? v : 2,
+            PathTemplate = Env("VAULT_PATH_TEMPLATE", "ses/clients/{clientId}/hmac"),
+            SecretKey = Env("VAULT_SECRET_KEY", "clientSecret"),
+            RequestTimeoutSeconds = int.TryParse(Environment.GetEnvironmentVariable("VAULT_REQUEST_TIMEOUT_SECONDS"), out var t) && t > 0 ? t : 10
         };
 
         private static string Env(string name, string fallback)

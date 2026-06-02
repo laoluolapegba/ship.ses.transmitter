@@ -79,9 +79,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
             var logResourceName = DescribeResource<T>(resourceFilters);
 
-            // Process only clients we can authenticate. Vault mode: the active client set discovered at
-            // startup; unknown or inactive/revoked clients are left Pending (a restart is required to pick up
-            // newly added clients). Config mode: every non-blank clientId is known. (Valid-clients-only.)
+            // Process only clients we can authenticate: the set loaded from Vault at startup. Records for
+            // clients not loaded (not registered in Vault, unreadable secret, or added after startup) are
+            // left Pending — a restart is required to pick up newly added clients.
             var known = new List<T>(records.Count);
             var unknownClients = new HashSet<string>(StringComparer.Ordinal);
             foreach (var r in records)
@@ -90,7 +90,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                 else unknownClients.Add(string.IsNullOrWhiteSpace(r.ClientId) ? "<none>" : r.ClientId!);
             }
             if (unknownClients.Count > 0)
-                _logger.LogWarning("⏭️ Skipped {Count} {Type} record(s) for unknown/inactive client(s) [{Clients}]; left Pending (restart to load newly added clients).",
+                _logger.LogWarning("⏭️ Skipped {Count} {Type} record(s) for client(s) not loaded from Vault [{Clients}]; left Pending (restart to load newly added clients).",
                     records.Count - known.Count, logResourceName, string.Join(", ", unknownClients));
             records = known;
 
