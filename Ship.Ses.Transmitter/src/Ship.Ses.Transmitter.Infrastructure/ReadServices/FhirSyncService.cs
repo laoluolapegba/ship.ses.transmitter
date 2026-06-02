@@ -441,20 +441,15 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
 
         private static string DescribeResource<T>(HashSet<string>? resourceFilters)
         {
-            if (resourceFilters is null || resourceFilters.Count == 0)
-                return typeof(T).Name;
-
-            if (resourceFilters.Count == 1)
+            // A single, specific resource (a single-attribute record like PatientSyncRecord, or an explicit
+            // resourceName filter) → name it directly, e.g. "Patient" / "Observation".
+            if (resourceFilters is { Count: 1 })
                 return resourceFilters.First();
 
-            const int previewLimit = 5; // how many to show
-            var list = resourceFilters.Take(previewLimit).ToArray();
-            var prefix = string.Join(", ", list);
-            var remaining = resourceFilters.Count - previewLimit;
-
-            return remaining > 0
-                ? $"{prefix}, (+{remaining} more)"
-                : prefix;
+            // No filter, or a multi-resource pool (GenericResourceSyncRecord carries one [FhirResource] per
+            // non-patient type) → use the record type name instead of listing ~140 resource names. This also
+            // matches the RecordType the worker logs.
+            return typeof(T).Name;
         }
 
 
