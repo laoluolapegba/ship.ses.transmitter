@@ -94,7 +94,7 @@ Routing only (endpoint/timeout/callback) — **never credentials**. `Default` is
 | Variable | Required | Description |
 |---|---|---|
 | `FhirRouting__Default__BaseUrl` | **Yes — hard-fails at startup if blank** | Fallback FHIR base URL (the gateway). |
-| `FhirRouting__Default__CallbackUrlTemplate` | Recommended | URL SHIP calls back with results. |
+| `FhirRouting__Default__CallbackUrlTemplate` | **Strongly recommended** | The **Ingestor ack endpoint** SHIP posts results back to — set it to the Ingestor's URL, `http://{host}/api/v1/patient/ack` (replace `{host}` with the Ingestor host; not a runtime token). It is sent with every outbound FHIR request. If blank, SHIP has nowhere to ack and delivery status is resolved **only** by the `StatusProbe` fallback (slower; logs a startup warning). |
 | `FhirRouting__Apis__{n}__Name` | **Yes (per entry) — hard-fails if blank** | Service name, e.g. `PDS`, `SCR`. |
 | `FhirRouting__Apis__{n}__BaseUrl` | **Yes (per entry) — hard-fails if blank** | Target base URL. |
 | `FhirRouting__Apis__{n}__Resources__{m}` | No | Resource types routed to this target. |
@@ -213,6 +213,10 @@ The worker stops at boot (rather than failing mid-run) when any of these is misc
 startup load logs a loud warning and loads nothing — every record is then **skipped (left Pending)** until
 the issue is fixed and the worker restarts. (Missing `VAULT_ADDR`/`VAULT_TOKEN`, by contrast, hard-fails.)
 
+**Non-fatal:** a blank `FhirRouting:Default:CallbackUrlTemplate` does **not** stop startup, but it is logged
+as a loud startup warning (`⚠️ …CallbackUrlTemplate is not set …`) — SHIP then has no Ingestor ack URL and
+delivery status is resolved only by the `StatusProbe` fallback. Set it to `http://{host}/api/v1/patient/ack`.
+
 ---
 
 ## 6. Background workers
@@ -236,11 +240,16 @@ ClientCredentials: Vault provider (env-configured) at https://vault.internal:820
 FeatureFlag: Using SHIP Admin API adapters (HTTP).
 🔐 Vault credential load: discovering clients at https://vault.internal:8200 (mount 'secret', KV v2) under prefix 'ses/clients'…
 🔐 Vault credential load complete: 3 client(s) loaded, 0 skipped (of 3 discovered). Loaded: lakeshore, emr-b, emr-c
+🌐 FHIR routing: Default BaseUrl=https://gateway/fhir, CallbackUrl (Ingestor ack)=http://ingestor.internal/api/v1/patient/ack. Routes: PDS→https://pds, SCR→https://scr
 ▶️ Starting Resources FHIR Sync Worker (client=lakeshore)…
 🛰️ EMR Callback Worker started …
 🛰️ StatusProbeWorker started …
 ```
 
+- The `🌐 FHIR routing` line echoes the effective destinations and the **callback (Ingestor ack) URL**. Verify
+  the `CallbackUrl` value is the Ingestor's `…/api/v1/patient/ack` — if it logs
+  `⚠️ FhirRouting:Default:CallbackUrlTemplate is not set …`, SHIP cannot ack and status falls back to probing.
+  Each outbound send also echoes its callback: `📡 Sending POST … CallbackUrl=…` (`CallbackUrl=<none>` if unset).
 - App **exits immediately** with the `Vault is not configured` message if `VAULT_ADDR`/`VAULT_TOKEN` are unset.
 - `🔐 Vault credential load found no registered clients …` — Vault reachable but empty, or the token lacks
   `list`/`read`. No records will be processed until fixed + restarted.
@@ -276,3 +285,4 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 | Worker self-pauses (`Client … not active`) | Admin API reports tenant inactive | Activate the tenant in SHIP Admin |
 | App exits in DirectDB mode | `UseShipAdminApi=false` but `ShipServerSqlDb` misconfigured | Set the connection string or use Admin-API mode |
 | EMR callbacks never delivered | Callback URL missing/blocked | Check `EmrTargetUrl`/`EmrCallback:Validation` |
+| Records stay `PENDING`/only resolve via probe; no acks arrive | `FhirRouting:Default:CallbackUrlTemplate` blank or wrong — SHIP has no Ingestor ack URL | Startup logs `⚠️ …CallbackUrlTemplate is not set` and sends log `CallbackUrl=<none>`. Set it to `http://{host}/api/v1/patient/ack` (the Ingestor host) and restart |

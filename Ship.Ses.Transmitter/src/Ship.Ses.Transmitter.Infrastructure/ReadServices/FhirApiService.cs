@@ -68,6 +68,15 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
             var baseUrl = route.BaseUrl.TrimEnd('/');
             callbackUrl ??= route.CallbackUrlTemplate ?? _routingSettings.CurrentValue.Default?.CallbackUrlTemplate;
 
+            // The callback URL is the Ingestor ack endpoint SHIP calls back on completion. If it is blank,
+            // SHIP has nowhere to post the result and the record can only be resolved by the probe fallback —
+            // make that explicit in the logs instead of failing silently.
+            if (string.IsNullOrWhiteSpace(callbackUrl))
+                _logger.LogWarning("⚠️ No CallbackUrl resolved for {ResourceType} via route {Route} (client {ClientId}). " +
+                    "SHIP cannot ack this send; status will depend on the StatusProbe fallback. " +
+                    "Set FhirRouting:Default:CallbackUrlTemplate to the Ingestor ack URL (e.g. http://<host>/api/v1/patient/ack).",
+                    resourceType, routeName, clientId);
+
             // detect bundle
             var normalized = TryExtractResourceType(jsonPayload) ?? resourceType;
 
@@ -125,8 +134,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Services
                 _logger.LogInformation("📦 Wrapped FHIR payload: {Payload}", Trunc(wrappedJson, 1000));
             }
 
-            _logger.LogInformation("📡 Sending {Method} {Endpoint} for {ResourceType} (id={ResourceId}) via {Route} for client {ClientId}",
-                method, endpoint, resourceType, resourceId ?? "<new>", routeName, clientId);
+            _logger.LogInformation("📡 Sending {Method} {Endpoint} for {ResourceType} (id={ResourceId}) via {Route} for client {ClientId}. CallbackUrl={CallbackUrl}",
+                method, endpoint, resourceType, resourceId ?? "<new>", routeName, clientId, callbackUrl ?? "<none>");
 
             try
             {

@@ -257,6 +257,24 @@ using (var initScope = app.Services.CreateScope())
 {
     var credentialProvider = initScope.ServiceProvider.GetRequiredService<IClientCredentialProvider>();
     credentialProvider.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    // Log the effective FHIR routing once at startup so a misconfigured destination — or, critically, a
+    // missing callback URL (the Ingestor ack endpoint SHIP posts results back to, e.g.
+    // http://{host}/api/v1/patient/ack) — is obvious in the startup logs rather than surfacing later as
+    // silently missing acks. A blank callback is a loud warning, not a hard-fail (the StatusProbe still
+    // resolves status), so the operator can spot and fix it from the logs they share.
+    var routing = initScope.ServiceProvider.GetRequiredService<IOptionsMonitor<FhirRoutingSettings>>().CurrentValue;
+    var routesSummary = routing.Apis.Count == 0
+        ? "(none)"
+        : string.Join(", ", routing.Apis.Select(a => $"{a.Name}→{a.BaseUrl}"));
+    if (string.IsNullOrWhiteSpace(routing.Default?.CallbackUrlTemplate))
+        Log.Warning("⚠️ FhirRouting:Default:CallbackUrlTemplate is not set — SHIP has no callback (Ingestor ack) URL, " +
+            "so delivery results will rely solely on the StatusProbe fallback. Set it to the Ingestor ack endpoint, " +
+            "e.g. http://<host>/api/v1/patient/ack. Default BaseUrl={BaseUrl}; Routes: {Routes}",
+            routing.Default?.BaseUrl ?? "(none)", routesSummary);
+    else
+        Log.Information("🌐 FHIR routing: Default BaseUrl={BaseUrl}, CallbackUrl (Ingestor ack)={CallbackUrl}. Routes: {Routes}",
+            routing.Default!.BaseUrl, routing.Default.CallbackUrlTemplate, routesSummary);
 }
 
 app.Run();
