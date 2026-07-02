@@ -8,7 +8,8 @@ the client's EMR. This is the outbound half of the SHIP SeS integration.
 > SHIP answers the outbound `POST` synchronously with **`202 Accepted` + a `transactionId`** — that's
 > the "I've queued it" acknowledgement, **not** the final clinical outcome. The real result arrives
 > later, asynchronously: either SHIP calls back (received by the companion **Ingestor**, which writes a
-> `SUCCESS` status event) or the Transmitter's **probe** worker pulls it. So the flow has two halves:
+> terminal status event — `SUCCESS`, `ERROR`, `REJECTED`, `CONFLICT` or `DUPLICATE`) or the Transmitter's
+> **probe** worker pulls it. So the flow has two halves:
 >
 > - **Send half** — `ResourcesFhirSyncWorker → FhirSyncService → FhirApiService` (Stages 1–9).
 > - **Acknowledgement half** — the `StatusEvent` state machine, `StatusProbeWorker`, `EmrCallbackWorker`
@@ -19,7 +20,7 @@ the client's EMR. This is the outbound half of the SHIP SeS integration.
 ## Contents
 
 - [Components](#components)
-- [Stage 0 — Startup: load the client credentials from Vault](#stage-0--startup-load-the-client-credentials-from-vault)
+- [Stage 0 — Startup: load the client credentials from config](#stage-0--startup-load-the-client-credentials-from-config)
 - [The send half (Stages 1–9)](#the-send-half)
 - [The acknowledgement half (Stages 10–11)](#the-acknowledgement-half)
 - [State-machine summary](#state-machine-summary)
@@ -35,10 +36,10 @@ the client's EMR. This is the outbound half of the SHIP SeS integration.
 | `Infrastructure/ReadServices/FhirSyncService` | Orchestrates a batch: fairness, retry, status seeding. |
 | `Infrastructure/Services/FhirApiService` | Builds and sends the outbound FHIR HTTP call. |
 | `Infrastructure/Security/CachedFhirTokenService` | Acquires + caches outbound bearer tokens per `(clientId, scope)`. |
-| `Infrastructure/Security/VaultClientCredentialProvider` | Loads per-client secrets from Vault at startup; resolves them from memory. |
+| `Infrastructure/Security/ConfigClientCredentialProvider` | Loads per-client secrets from config (`AppSettings:Clients`, ISW-injected) at startup; resolves them from memory. |
 | `Application/Interfaces/IFhirSyncStore` (Mongo adapter `MongoSyncRepository`) | Storage-neutral persistence for records + status events. |
 | `Worker/StatusProbeWorker` | Probes SHIP for records that got no callback within a timeout. |
-| `Worker/EmrCallbackWorker` | Delivers `SUCCESS` results back to the client's EMR callback URL. |
+| `Worker/EmrCallbackWorker` | Delivers **terminal** results (`SUCCESS`/`ERROR`/`REJECTED`/`CONFLICT`/`DUPLICATE`) back to the client's EMR callback URL. |
 
 Two record pools live in MongoDB: `PatientSyncRecord` (`transformed_pool_patients`) and
 `GenericResourceSyncRecord` (`transformed_pool_resources`, all non-patient resource types). Status
@@ -46,71 +47,54 @@ events live in `fhirstatusevents`.
 
 ---
 
-## Stage 0 — Startup: load the client credentials from Vault
+## Stage 0 — Startup: load the client credentials from config
 
 Before any worker processes a record, `Program.cs` calls `IClientCredentialProvider.InitializeAsync()`
-once. Outbound credentials come **only from Vault**, configured via **OS environment variables** (the same
-mechanism the Ingestor uses). The startup sequence:
+once. Outbound credentials come from **configuration** — the `AppSettings:Clients` list. The application
+makes **no Vault API calls**: it knows no Vault address/token and handles no `X-Vault-Token`. The secret
+**values** are injected into the process environment before startup by the org's **ISW secret-injection
+mechanism** (a HashiCorp Vault agent/sidecar) and bound over the committed placeholders by .NET's
+environment-variable configuration provider. The startup sequence:
 
-1. **Connect** using `VAULT_ADDR` + `VAULT_TOKEN`. **If either is unset the worker exits at startup** —
-   Vault is mandatory.
-2. **Discover** the registered clients: list the prefix
-   `GET {VAULT_ADDR}/v1/{VAULT_MOUNT}/metadata/{prefix}?list=true` (KV v2), where `prefix` is everything in
-   `VAULT_PATH_TEMPLATE` *before* `{clientId}` (default `ses/clients`). The returned folder names **are**
-   the clientIds.
-3. **Read each** client's secret at `{VAULT_MOUNT}/data/{VAULT_PATH_TEMPLATE}` with `{clientId}`
-   substituted, e.g. `secret/data/ses/clients/lakeshore`.
-4. **Load into memory** as `ClientCredential(TokenEndpoint, clientId, clientSecret, GrantType)` — the
-   `clientId` and `clientSecret` come from Vault; the `TokenEndpoint`/`GrantType` come from `AuthSettings`.
-5. **Report** the result in the log:
-   `🔐 Vault credential load complete: 3 client(s) loaded, 0 skipped (of 3 discovered). Loaded: …`.
+1. **Read** `AppSettings:Clients` from configuration (placeholders now overridden by the ISW-injected env
+   vars `AppSettings__Clients__{n}__ClientSecret` / `__HmacSecret`).
+2. **Keep** only entries with `Status = ACTIVE` and a non-blank `ClientSecret`; the entry's `ClientId`
+   **is** the outbound `client_id`.
+3. **Load into memory** as `ClientCredential(TokenEndpoint, clientId, clientSecret, GrantType, hmacSecret)`
+   — `clientId`/`clientSecret`/`hmacSecret` come from the client entry; `TokenEndpoint`/`GrantType` come
+   from `AuthSettings`.
+4. **Report** the result in the log:
+   `🔐 Client credential load complete: 3 client(s) loaded, 0 skipped. Loaded: …`.
 
-There are **no per-request Vault calls and no TTL** — every credential is resolved from this in-memory set
+There are **no per-request lookups and no TTL** — every credential is resolved from this in-memory set
 thereafter. **Only loaded clients are processed** (Stage 2). Adding, removing or rotating a client requires
 a **restart**.
 
-### Vault environment variables
+### Configuration shape
 
-Only the first two are required; the rest are override knobs with working defaults.
+`appsettings.json` carries the non-secret structure and placeholders; the ISW injector supplies the real
+secret values as environment variables at runtime.
 
-| Variable | Required | Default | Meaning |
+```jsonc
+"AppSettings": {
+  "Hmac": { "Enabled": true, "SignatureHeader": "X-SHIP-Signature", "HmacAlgo": "HMACSHA256", … },
+  "Clients": [
+    { "ClientId": "ses-client-a", "ClientSecret": "<placeholder>", "HmacSecret": "<placeholder>", "Status": "ACTIVE" }
+    // ses-client-b, …
+  ]
+}
+```
+
+| Config key | Secret? | Source | Meaning |
 |---|---|---|---|
-| `VAULT_ADDR` | **Yes (worker exits if unset)** | — | Vault base URL, e.g. `https://vault.internal:8200`. |
-| `VAULT_TOKEN` | **Yes (worker exits if unset)** | — | Vault token; needs `list` on the prefix + `read` on the client paths. |
-| `VAULT_MOUNT` | No | `secret` | KV mount point. |
-| `VAULT_KV_VERSION` | No | `2` | KV engine version (controls the `data`/`metadata` path segments). |
-| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}` | Logical per-client path; `{clientId}` (folder name) substituted. |
-| `VAULT_SECRET_KEY` | No | `clientSecret` | **Which field inside the secret holds the client secret** (see below). |
-| `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
+| `AppSettings:Clients:{n}:ClientId` | No | `appsettings.json` | Client identity; the outbound `client_id` and the value carried on each record. |
+| `AppSettings:Clients:{n}:ClientSecret` | **Yes** | ISW env injection | Outbound OAuth client secret. A client whose secret is still a blank/placeholder is **skipped** at load (`🔐 Skipped client {id}: ClientSecret is missing or empty`). |
+| `AppSettings:Clients:{n}:HmacSecret` | **Yes** | ISW env injection | Per-client HMAC key (optional). |
+| `AppSettings:Clients:{n}:Status` | No | `appsettings.json` | Only `ACTIVE` clients are loaded. |
+| `AppSettings:Hmac:*` | No | `appsettings.json` | Shared HMAC settings (header names, algorithm, clock skew, bypass paths). |
 
-### What `VAULT_SECRET_KEY` is (and why you usually don't set it)
-
-A Vault KV secret is a **JSON object — a map of fields**, not a single string. So
-`secret/ses/clients/lakeshore` holds something like `{ "clientSecret": "abc123" }`. `VAULT_SECRET_KEY`
-names **which field** is the outbound OAuth client secret:
-
-```
-secret      = read("secret/data/ses/clients/lakeshore")   // a dictionary of fields
-clientSecret = secret[VAULT_SECRET_KEY]                     // pick the field (default "clientSecret")
-```
-
-It defaults to `clientSecret`, which matches the documented way of writing an entry:
-
-```bash
-vault kv put secret/ses/clients/lakeshore clientSecret="<outbound-oauth-client-secret>"
-```
-
-So you only set `VAULT_SECRET_KEY` if your entries store the secret under a different field name. A client
-folder that exists but whose secret is under a different/missing field is **skipped** at load (logged:
-`skipped client {id}: secret field 'clientSecret' is missing or empty`) — the usual reason an expected
-client isn't processed.
-
-The Vault token policy:
-
-```hcl
-path "secret/data/ses/clients/*"   { capabilities = ["read"] }
-path "secret/metadata/ses/clients" { capabilities = ["list"] }
-```
+The Vault path and policy the ISW agent uses to source these values are configured **on the agent**, not in
+this application — the app is unaware of them.
 
 ---
 
@@ -130,7 +114,7 @@ path "secret/metadata/ses/clients" { capabilities = ["list"] }
   calling `FhirSyncService.ProcessPendingRecordsAsync<T>`.
 
 > Two independent notions of "client": the **tenant** (this whole deployment, gates the loop) and the
-> per-record **clientId** (selects the Vault credential). They are deliberately separate.
+> per-record **clientId** (selects the outbound credential). They are deliberately separate.
 
 ### Stage 2 — Load pending records & keep only loadable clients
 
@@ -138,10 +122,9 @@ path "secret/metadata/ses/clients" { capabilities = ["list"] }
 
 1. `IFhirSyncStore.GetByStatusAsync<T>("Pending")` loads pending records (Mongo adapter: `Find(Status ==
    "Pending")`, default take 100).
-2. **Valid-clients-only filter:** records whose `clientId` is **not** in the Vault-loaded set
+2. **Valid-clients-only filter:** records whose `clientId` is **not** in the startup-loaded set
    (`IClientCredentialProvider.IsClientKnown`) are **skipped and left `Pending`** —
-   `⏭️ Skipped N record(s) for client(s) not loaded from Vault …`. (New/rotated clients need a restart to
-   appear.)
+   `⏭️ Skipped N record(s) for client(s) not loaded …`. (New/rotated clients need a restart to appear.)
 
 ### Stage 3 — Fair scheduling + per-client circuit breaker
 
@@ -168,7 +151,7 @@ Inside `FhirApiService.SendAsync`:
 - `CachedFhirTokenService.GetAccessTokenAsync(clientId, scope)`:
   - Returns a cached token if one is valid for `(clientId, scope)` (30 s refresh margin).
   - On a miss, a per-key single-flight lock collapses concurrent demand; it resolves the credential from the
-    **in-memory Vault set** (`IClientCredentialProvider.GetAsync` — no Vault call) and POSTs
+    **in-memory client set** (`IClientCredentialProvider.GetAsync`) and POSTs
     `{clientId, clientSecret, grantType, scope}` to `AuthSettings:TokenEndpoint`.
   - Caches the token by its `expires_in`. Tokens/secrets are never logged (only masked client ids).
 
@@ -236,8 +219,8 @@ The final result is resolved one of two ways; both converge on flipping the `Sta
 
 **Path A — async callback (happy path).** SHIP processes the resource and POSTs the result to the
 `callbackUrl` sent in the envelope. That hits the **Ingestor** (the companion service), which resolves the
-client from the JWT and updates the matching `fhirstatusevents` document to `Status = "SUCCESS"`. *(This
-lives in the Ingestor repo; the Transmitter only consumes the resulting SUCCESS event.)*
+client from the JWT and updates the matching `fhirstatusevents` document to its terminal status. *(This
+lives in the Ingestor repo; the Transmitter only consumes the resulting event.)*
 
 **Path B — probe fallback.** If no callback lands within the timeout, `StatusProbeWorker`:
 
@@ -249,12 +232,24 @@ lives in the Ingestor repo; the Transmitter only consumes the resulting SUCCESS 
   - `404` → stop probing (resource genuinely absent).
   - other/5xx/exception → bounded retry with backoff, then abandon.
 
+> **Convergence & idempotency (Path A vs Path B race).** `fhirstatusevents` has a **partial unique index on
+> `transactionId`** (`EnsureStatusEventSchemaAsync`, created at startup), so the probe and the real SHIP
+> callback act on **one** document, not two. The PENDING seed is **insert-if-absent**
+> (`SeedPendingStatusEventAsync`), and the probe promotion is **guarded** — `MarkProbeSuccessAndAttachPayloadAsync`
+> only promotes while the event is still `PENDING` and returns `false` if the callback already resolved it, so
+> the probe stands down instead of overwriting authoritative callback data. Because a second document can't
+> exist and delivery is gated on `CallbackStatus`, the actual callback can't produce a **second EMR callback**
+> once the probe has delivered an equivalent result.
+
 ### Stage 11 — Forwarding the result to the EMR
 
-Once a `StatusEvent` is `Status = "SUCCESS"`, `EmrCallbackWorker` closes the loop:
+Once a `StatusEvent` reaches a **terminal** outcome — any of `SUCCESS`, `ERROR`, `REJECTED`, `CONFLICT`,
+`DUPLICATE` (the MPI-defined set, `ShipCallbackStatus.Terminal`) — `EmrCallbackWorker` closes the loop so
+the EMR receives the **final outcome, not only successes**:
 
-- `FetchDueEmrCallbacksAsync` finds `SUCCESS` events whose `CallbackStatus` is not `Succeeded`/`Failed` and
-  that are due; `TryClaimEmrCallbackAsync` claims one (`CallbackStatus → InFlight`).
+- `FetchDueEmrCallbacksAsync` finds events with a **terminal** `Status` whose `CallbackStatus` is not
+  `Succeeded`/`Failed` and that are due (`PENDING` is excluded — it is not an outcome);
+  `TryClaimEmrCallbackAsync` claims one (`CallbackStatus → InFlight`).
 - Resolves the target URL (the persisted `EmrTargetUrl`, else a patient-by-txn fallback).
 - **SSRF guard** (`ICallbackUrlValidator`, opt-in via `EmrCallback:Validation:Enabled`; scheme sanity is
   always enforced).
@@ -286,13 +281,14 @@ record.Status:        Pending ──send 202──▶ Synced
                           ▲   └─fail <3──┘ (requeue, RetryCount++)
                           └───fail ≥3────▶ Failed
 
-StatusEvent.Status:   (none) ──seed──▶ PENDING ──callback OR probe──▶ SUCCESS
+StatusEvent.Status:   (none) ──seed──▶ PENDING ──callback OR probe──▶ SUCCESS | ERROR | REJECTED | CONFLICT | DUPLICATE  (terminal → deliver to EMR)
 StatusEvent.Callback: Pending ──claim──▶ InFlight ──2xx──▶ Succeeded
                                                   └─fail ≥MaxAttempts─▶ Failed (dead-letter)
 ```
 
 In steady state, a record skipped at Stage 2 (client not loaded) simply stays `Pending` and is re-evaluated
-each cycle until the client is added in Vault and the worker restarts.
+each cycle until the client is added to `AppSettings:Clients` (with its injected secret) and the worker
+restarts.
 
 ---
 
@@ -306,5 +302,5 @@ each cycle until the client is added in Vault and the worker restarts.
 
 ---
 
-*Related: `docs/multi-client/SECRETS-AND-CONFIG.md` (Vault env vars + secrets), `DEPLOYMENT.md`
+*Related: `docs/multi-client/SECRETS-AND-CONFIG.md` (config + ISW-injected secrets), `DEPLOYMENT.md`
 (operations), `docs/multi-client/FINDINGS.md` (design findings).*

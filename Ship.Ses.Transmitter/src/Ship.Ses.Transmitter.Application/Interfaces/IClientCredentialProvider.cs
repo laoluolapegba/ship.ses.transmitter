@@ -11,18 +11,19 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
     /// shipService drives routing and scope, not credential selection.
     /// </para>
     /// <para>
-    /// The Vault-backed implementation discovers every registered client under the configured prefix and
-    /// loads each client's secret once at startup (<see cref="InitializeAsync"/>) — mirroring the Ingestor's
-    /// model. There are no per-request Vault calls and no TTL: only the clients present (and active) at
-    /// startup are processed, and adding/rotating a client requires a restart. The <c>Config</c>
-    /// implementation is a single-client fallback that treats every clientId as known.
+    /// The implementation loads the registered clients once at startup (<see cref="InitializeAsync"/>) from
+    /// configuration (the <c>AppSettings:Clients</c> list), keeping only <c>ACTIVE</c> clients that have a
+    /// usable secret. Secret values are injected into the runtime as environment variables before startup by
+    /// the organization's ISW secret-injection mechanism (a Vault agent) and bound over the committed
+    /// placeholders — the application makes no Vault API calls. There are no per-request lookups and no TTL:
+    /// only clients present at startup are processed, and adding/rotating a client requires a restart.
     /// </para>
     /// </summary>
     public interface IClientCredentialProvider
     {
         /// <summary>
-        /// Loads the set of valid clients once at startup. Vault: discover + read all active clients into
-        /// memory. Config: a no-op. Safe to call exactly once before workers begin processing.
+        /// Loads the set of valid clients once at startup: read all <c>ACTIVE</c> clients with a usable secret
+        /// from configuration into memory. Safe to call exactly once before workers begin processing.
         /// </summary>
         Task InitializeAsync(CancellationToken ct = default);
 
@@ -30,8 +31,8 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
         Task<ClientCredential> GetAsync(string clientId, CancellationToken ct = default);
 
         /// <summary>
-        /// True if the client is one we may process. Vault: present in the startup-loaded active set.
-        /// Config: any non-blank clientId (single-client fallback). Used to skip records for unknown clients.
+        /// True if the client is one we may process — present in the startup-loaded <c>ACTIVE</c> set.
+        /// Used to skip records for unknown clients.
         /// </summary>
         bool IsClientKnown(string clientId);
     }
@@ -39,10 +40,16 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
     /// <summary>
     /// Non-scope credential material needed to request an outbound access token for a client.
     /// Scope is intentionally excluded — it is route-derived and passed separately.
+    /// <para>
+    /// <see cref="HmacSecret"/> is the client's shared HMAC key (for request signing). It is carried
+    /// alongside the OAuth secret so both resolve per <c>clientId</c> from the same source; it is optional
+    /// and not used for token acquisition.
+    /// </para>
     /// </summary>
     public sealed record ClientCredential(
         string TokenEndpoint,
         string ClientId,
         string ClientSecret,
-        string GrantType = "client_credentials");
+        string GrantType = "client_credentials",
+        string? HmacSecret = null);
 }

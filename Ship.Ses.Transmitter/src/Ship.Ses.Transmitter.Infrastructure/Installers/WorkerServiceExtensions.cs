@@ -86,26 +86,18 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             services.AddHttpClient("FhirTokens");
             services.AddSingleton<IFhirTokenService, CachedFhirTokenService>();
 
-            // Per-client outbound credentials come from Vault, configured via OS environment variables
-            // (VAULT_ADDR, VAULT_TOKEN, VAULT_HMAC_*) — the same mechanism the SeS Ingestor uses, so there
-            // is no appsettings section. All registered clients under the path prefix are discovered and
-            // read once at startup (no per-request Vault calls, no TTL). VAULT_ADDR/VAULT_TOKEN are
-            // required: the worker exits at startup if they are unset.
-            var vaultSettings = VaultClientSecretSettings.FromEnvironment();
-            if (!vaultSettings.IsConfigured)
-                throw new InvalidOperationException(
-                    "Vault is not configured: set the VAULT_ADDR and VAULT_TOKEN environment variables " +
-                    "(per-client outbound credentials are loaded from Vault at startup).");
+            // Per-client outbound credentials come from configuration (AppSettings:Clients / AppSettings:Hmac).
+            // Secret VALUES are injected into the runtime as environment variables before startup by the
+            // organization's ISW secret-injection mechanism (a HashiCorp Vault agent) and bound over the
+            // committed placeholders — e.g. AppSettings__Clients__0__ClientSecret. The application makes no
+            // Vault API calls, knows no Vault address/token, and handles no X-Vault-Token. Clients are loaded
+            // once at startup (no per-request lookups, no TTL); adding/rotating a client requires a restart.
+            services.Configure<ClientDirectoryOptions>(configuration.GetSection("AppSettings"));
+            services.AddSingleton<IClientCredentialProvider, ConfigClientCredentialProvider>();
 
-            services.AddSingleton(vaultSettings);
-            services.AddHttpClient("Vault", client =>
-            {
-                client.BaseAddress = new Uri(vaultSettings.Address!.TrimEnd('/') + "/");
-                client.Timeout = TimeSpan.FromSeconds(vaultSettings.RequestTimeoutSeconds);
-            });
-            services.AddSingleton<IVaultSecretReader, HttpVaultSecretReader>();
-            services.AddSingleton<IClientCredentialProvider, VaultClientCredentialProvider>();
-            Console.WriteLine($"ClientCredentials: Vault provider (env-configured) at {vaultSettings.Address}, prefix '{vaultSettings.ListPrefix()}'.");
+            var configuredClients = configuration.GetSection("AppSettings:Clients").Get<List<ClientCredentialEntry>>() ?? new();
+            var activeCount = configuredClients.Count(c => c is not null && c.IsActive);
+            Console.WriteLine($"ClientCredentials: config provider (AppSettings:Clients), {activeCount} ACTIVE of {configuredClients.Count} configured. Secrets are ISW-injected via environment variables.");
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 

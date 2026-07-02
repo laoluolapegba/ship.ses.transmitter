@@ -251,12 +251,18 @@ Console.WriteLine(test == null
 
 var app = builder.Build();
 
-// Load the valid client set once, before any worker starts processing. Vault: discover + read all active
-// clients into memory (no per-request calls, no TTL). Config: a no-op. Adding/rotating a client → restart.
+// Load the valid client set once, before any worker starts processing: read all ACTIVE clients (with an
+// ISW-injected secret) from AppSettings:Clients into memory (no per-request lookups, no TTL, no Vault API
+// calls). Adding/rotating a client → restart.
 using (var initScope = app.Services.CreateScope())
 {
     var credentialProvider = initScope.ServiceProvider.GetRequiredService<IClientCredentialProvider>();
     credentialProvider.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+
+    // Ensure the status-event store enforces transactionId uniqueness so the probe flow and the real SHIP
+    // callback converge on ONE document per transaction (prevents duplicate EMR callbacks). Idempotent.
+    var syncStore = initScope.ServiceProvider.GetRequiredService<IFhirSyncStore>();
+    syncStore.EnsureStatusEventSchemaAsync(CancellationToken.None).GetAwaiter().GetResult();
 
     // Log the effective FHIR routing once at startup so a misconfigured destination — or, critically, a
     // missing callback URL (the Ingestor ack endpoint SHIP posts results back to, e.g.

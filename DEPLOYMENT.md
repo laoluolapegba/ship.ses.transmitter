@@ -6,7 +6,7 @@ how to wire up its external dependencies, and how to read the startup logs when
 something is misconfigured.
 
 It is the companion to the **SeS Ingestor**'s `DEPLOYMENT.md`. Where the two services overlap
-(Vault, the SHIP identity service), the conventions are kept consistent so DevOps configures
+(secret injection, the SHIP identity service), the conventions are kept consistent so DevOps configures
 each dependency once — differences are called out explicitly below.
 
 ---
@@ -27,7 +27,7 @@ each dependency once — differences are called out explicitly below.
 | **EMR staging DB** (MySQL/PostgreSQL/SqlServer, EF) | Marking staged rows submitted/failed | **Yes** | App fails to start if `AppSettings:EmrDb` is misconfigured. |
 | **SHIP Admin API** | Tenant heartbeat, metrics, sync enable/disable | Only when `SeSClient:UseShipAdminApi=true` (default) | Heartbeat/metrics fail; worker self-pauses if it can't confirm the tenant is active. |
 | **SHIP server DB** (EF) | Client sync config when **not** using the Admin API | Only when `SeSClient:UseShipAdminApi=false` | App fails to start (DbContext) in DirectDB mode. |
-| **HashiCorp Vault** | Per-client outbound credentials, loaded once at startup | **Yes** (env-configured) | Worker **exits at startup** if `VAULT_ADDR`/`VAULT_TOKEN` unset; if reachable but 0 clients, every record is skipped (left `Pending`). |
+| **ISW secret injection** (Vault agent → env vars) | Injects per-client `ClientSecret`/`HmacSecret` and other secrets into the runtime **before startup** | **Yes** (platform, out-of-process) | If a client's secret placeholder is not overridden, that client is skipped at startup and its records are left `Pending`. The app itself makes **no Vault calls**. |
 
 ---
 
@@ -46,12 +46,13 @@ Configuration is layered; later sources override earlier ones:
 .NET configuration keys use a **double underscore `__`** as the section separator:
 `AuthSettings:ClientSecret` → `AuthSettings__ClientSecret`.
 
-> **Vault is configured like the Ingestor:** plain OS env vars (`VAULT_*`) — **not** the `__` config
-> convention, and there is **no `appsettings` section**; clients are discovered and loaded once at startup.
-> `VAULT_ADDR`/`VAULT_TOKEN` are required — the worker **exits at startup** if they are unset. See §3.5.
+> **Secrets are injected, not fetched.** Per-client secrets follow the same `__` config convention as
+> everything else (`AppSettings__Clients__{n}__ClientSecret` / `__HmacSecret`). Their **values** are placed
+> into the process environment before startup by the org's **ISW secret-injection mechanism** (a Vault
+> agent/sidecar). The application never contacts Vault — it only reads its own configuration. See §3.5.
 
-> Never put client secrets, DB passwords, or the Vault token into `appsettings.json`. Use env vars /
-> Kubernetes Secrets. See [`docs/multi-client/SECRETS-AND-CONFIG.md`](docs/multi-client/SECRETS-AND-CONFIG.md).
+> Never put client secrets, DB passwords, or HMAC keys into `appsettings.json` (placeholders only). Use
+> env vars / the ISW injector. See [`docs/multi-client/SECRETS-AND-CONFIG.md`](docs/multi-client/SECRETS-AND-CONFIG.md).
 
 ---
 
@@ -85,7 +86,7 @@ scope authenticate to every SHIP target system (PDS, SCR, …).
 | `AuthSettings__TokenEndpoint` | **Yes — hard-fails at startup if blank** | identity URL | SHIP identity token endpoint (used per client). |
 | `AuthSettings__Scope` | **Yes — hard-fails at startup if blank** | `ship-full-access` | Outbound authorization scope (every target). |
 | `AuthSettings__GrantType` | No | `client_credentials` | OAuth grant type. |
-| `AuthSettings__ClientId` / `__ClientSecret` | No | — | **No longer used** — outbound credentials come from Vault per client (§3.5). May be left blank/removed. |
+| `AuthSettings__ClientId` / `__ClientSecret` | No | — | **No longer used** — outbound credentials come per client from `AppSettings:Clients` (§3.5). May be left blank/removed. |
 
 ### 3.4 FHIR routing — section `FhirRouting`
 
@@ -100,24 +101,25 @@ Routing only (endpoint/timeout/callback) — **never credentials**. `Default` is
 | `FhirRouting__Apis__{n}__Resources__{m}` | No | Resource types routed to this target. |
 | `FhirRouting__Apis__{n}__TimeoutSeconds` | No | Per-target timeout. |
 
-### 3.5 Per-client credentials (Vault) — plain OS env vars
+### 3.5 Per-client credentials — section `AppSettings:Clients` (ISW-injected)
 
-Per-client outbound credentials come **only from Vault**, configured via **plain OS env vars** (not the `__`
-convention, no `appsettings` section) — same as the Ingestor. Every client is discovered (by listing the
-prefix) and read **once at startup** into memory (no per-request calls, no TTL); each client whose secret is
-present is loaded, and the loaded set is logged. **Adding, removing or rotating a client requires a restart.**
-The Vault token needs `list` on the prefix and `read` on the client paths. There is **no `Config` fallback** —
-`VAULT_ADDR`/`VAULT_TOKEN` are required and the worker **exits at startup** if either is unset.
+Per-client outbound credentials come from configuration: the `AppSettings:Clients` list. `appsettings.json`
+ships **placeholders**; the org's ISW secret-injection mechanism (a Vault agent) writes the real values into
+the process environment before startup, and the environment-variable config provider binds them over the
+placeholders. The application makes **no Vault API calls**, knows no Vault address/token, and handles no
+`X-Vault-Token`. At startup every `ACTIVE` client with a usable (non-placeholder) secret is loaded once into
+memory (no per-request lookups, no TTL) and the loaded set is logged. **Adding, removing or rotating a client
+requires a restart.**
+
+One env-var pair per client, index-aligned to the list order in `appsettings.json`:
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
-| `VAULT_ADDR` | **Yes — worker exits if unset** | — | Vault base URL, e.g. `https://vault.internal:8200`. |
-| `VAULT_TOKEN` | **Yes — worker exits if unset** | — | Vault token. **Secret.** Needs `list` + `read` (see §4.3). |
-| `VAULT_MOUNT` | No | `secret` | KV mount point. |
-| `VAULT_KV_VERSION` | No | `2` | KV engine version (controls `data`/`metadata` segments). |
-| `VAULT_PATH_TEMPLATE` | No | `ses/clients/{clientId}` | **Logical** per-client path; `{clientId}` (folder name) substituted. Do **not** include `data`/`metadata`. |
-| `VAULT_SECRET_KEY` | No | `clientSecret` | Field holding the client secret. |
-| `VAULT_REQUEST_TIMEOUT_SECONDS` | No | `10` | Vault HTTP timeout. |
+| `AppSettings__Clients__{n}__ClientId` | **Yes (per entry)** | — | The client identity; **is** the outbound `client_id` and the value carried on each record. Non-secret (may stay in `appsettings.json`). |
+| `AppSettings__Clients__{n}__ClientSecret` | **Yes (per entry)** | — | **Secret.** Outbound OAuth client secret. ISW-injected. |
+| `AppSettings__Clients__{n}__HmacSecret` | No | — | **Secret.** Per-client HMAC key. ISW-injected. |
+| `AppSettings__Clients__{n}__Status` | No | `ACTIVE` | Only `ACTIVE` clients are loaded. Non-secret. |
+| `AppSettings__Hmac__*` | No | see appsettings | Shared HMAC settings (header names, algorithm, clock skew, bypass paths). Non-secret. |
 
 ### 3.6 MongoDB — section `SourceDbSettings`
 
@@ -170,31 +172,27 @@ Provision a database and a read/write user. Supply `SourceDbSettings__Connection
 Set `AuthSettings__TokenEndpoint` to the identity token endpoint and the `FhirRouting` base URLs to the
 gateway/PDS/SCR endpoints. Outbound tokens are acquired per client and cached per `(clientId, scope)`.
 
-### 4.3 Vault — per-client outbound credentials (env-configured; §3.5)
+### 4.3 Per-client secrets via ISW injection (§3.5)
 
-The Transmitter reads all client secrets **once at startup** (mirroring the Ingestor), configured via the
-`VAULT_*` env vars in §3.5. The **folder name is the ClientId** (the value carried on each record) and the
-secret holds the outbound OAuth `clientSecret`.
+The Transmitter never talks to Vault. DevOps configures the **ISW secret-injection mechanism** (the Vault
+agent/sidecar that runs alongside the container) to read the approved Vault path and expose each value as an
+environment variable, one pair per client, index-aligned to the `AppSettings:Clients` order:
 
-**Store each client (KV v2):**
-```bash
-# CLI hides the "data" segment; this writes to secret/data/ses/clients/lakeshore
-vault kv put secret/ses/clients/lakeshore \
-    clientSecret="<outbound-oauth-client-secret>"
+```
+AppSettings__Clients__0__ClientSecret = <ses-client-a outbound OAuth secret>
+AppSettings__Clients__0__HmacSecret   = <ses-client-a HMAC key>
+AppSettings__Clients__1__ClientSecret = <ses-client-b …>
+AppSettings__Clients__1__HmacSecret   = <ses-client-b …>
 ```
 
-> **Same mechanism as the Ingestor, own path.** The Transmitter's prefix is `ses/clients/...` and the secret
-> is the **outbound OAuth client secret**; the Ingestor's `emr-clients/...` secret is the **inbound HMAC key**.
-> They are distinct credentials at distinct paths — configure both per client.
+The `ClientId`/`Status` and the `AppSettings:Hmac` block are non-secret and stay in `appsettings.json`; the
+`ClientId` **is** the outbound `client_id` and the value carried on each record.
 
-**Policy the token needs:**
-```hcl
-path "secret/data/ses/clients/*"   { capabilities = ["read"] }
-path "secret/metadata/ses/clients" { capabilities = ["list"] }
-```
-
+> **Injection, not access.** Vault remains the source of truth, but reads happen in the ISW agent —
+> out-of-process. The application only reads its own configuration; it holds no Vault address, token, or
+> policy, and issues no `list`/`read` calls.
+>
 > **Adding/rotating a client requires a restart** — the in-memory client set is built once at startup.
-> There are no per-request Vault calls and no TTL refresh.
 
 ---
 
@@ -202,16 +200,16 @@ path "secret/metadata/ses/clients" { capabilities = ["list"] }
 
 The worker stops at boot (rather than failing mid-run) when any of these is misconfigured:
 
-- `VAULT_ADDR` or `VAULT_TOKEN` unset (Vault is the only outbound-credential source).
 - `FhirRouting:Default:BaseUrl` blank, or any `FhirRouting:Apis` entry missing `Name`/`BaseUrl`.
 - `AuthSettings:TokenEndpoint` or `AuthSettings:Scope` blank.
 - `AppSettings:ShipServerSqlDb` / `EmrDb` missing a `DbType`.
 - `SeSClient:TenantId` (and legacy `ClientId`) both blank.
 - Neither `FhirRouting` nor a legacy `FhirApi` block present.
 
-**Non-fatal:** if Vault is **reachable** but returns 0 clients (or the token lacks `list`/`read`), the
-startup load logs a loud warning and loads nothing — every record is then **skipped (left Pending)** until
-the issue is fixed and the worker restarts. (Missing `VAULT_ADDR`/`VAULT_TOKEN`, by contrast, hard-fails.)
+**Non-fatal:** if `AppSettings:Clients` yields 0 `ACTIVE` clients with a usable secret (e.g. the ISW
+injector didn't override the placeholders), the startup load logs a loud warning and loads nothing — every
+record is then **skipped (left Pending)** until the config is fixed and the worker restarts. Missing
+per-client secrets are a **configuration** problem, not a startup hard-fail.
 
 **Non-fatal:** a blank `FhirRouting:Default:CallbackUrlTemplate` does **not** stop startup, but it is logged
 as a loud startup warning (`⚠️ …CallbackUrlTemplate is not set …`) — SHIP then has no Ingestor ack URL and
@@ -233,13 +231,12 @@ delivery status is resolved only by the `StatusProbe` fallback. Set it to `http:
 
 ## 7. Startup logs to verify a good deployment
 
-A healthy start logs the Vault endpoint, the load result, and each worker starting:
+A healthy start logs the client-credential load result and each worker starting:
 
 ```
-ClientCredentials: Vault provider (env-configured) at https://vault.internal:8200, prefix 'ses/clients'.
+ClientCredentials: config provider (AppSettings:Clients), 3 ACTIVE of 3 configured. Secrets are ISW-injected via environment variables.
 FeatureFlag: Using SHIP Admin API adapters (HTTP).
-🔐 Vault credential load: discovering clients at https://vault.internal:8200 (mount 'secret', KV v2) under prefix 'ses/clients'…
-🔐 Vault credential load complete: 3 client(s) loaded, 0 skipped (of 3 discovered). Loaded: lakeshore, emr-b, emr-c
+🔐 Client credential load complete: 3 client(s) loaded, 0 skipped. Loaded: ses-client-a, ses-client-b, ses-client-c
 🌐 FHIR routing: Default BaseUrl=https://gateway/fhir, CallbackUrl (Ingestor ack)=http://ingestor.internal/api/v1/patient/ack. Routes: PDS→https://pds, SCR→https://scr
 ▶️ Starting Resources FHIR Sync Worker (client=lakeshore)…
 🛰️ EMR Callback Worker started …
@@ -250,11 +247,11 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
   the `CallbackUrl` value is the Ingestor's `…/api/v1/patient/ack` — if it logs
   `⚠️ FhirRouting:Default:CallbackUrlTemplate is not set …`, SHIP cannot ack and status falls back to probing.
   Each outbound send also echoes its callback: `📡 Sending POST … CallbackUrl=…` (`CallbackUrl=<none>` if unset).
-- App **exits immediately** with the `Vault is not configured` message if `VAULT_ADDR`/`VAULT_TOKEN` are unset.
-- `🔐 Vault credential load found no registered clients …` — Vault reachable but empty, or the token lacks
-  `list`/`read`. No records will be processed until fixed + restarted.
-- `⏭️ Skipped N … record(s) for client(s) not loaded from Vault …` — those clients weren't loaded (not
-  registered under the prefix, unreadable secret, or added after startup); their records stay `Pending`.
+- `🔐 No ACTIVE clients with a usable secret were loaded from AppSettings:Clients …` — the ISW injector
+  didn't override the placeholder secrets, or every client is non-`ACTIVE`. No records will be processed
+  until fixed + restarted.
+- `🔐 Skipped client {ClientId}: …` — that client wasn't loaded (non-`ACTIVE`, or its `ClientSecret` was
+  still a blank/placeholder); its records stay `Pending`.
 
 ---
 
@@ -266,9 +263,9 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 - [ ] `SourceDbSettings__ConnectionString` + `__DatabaseName` point at the real Mongo.
 - [ ] `AppSettings__EmrDb__*` (and `ShipServerSqlDb__*` if `UseShipAdminApi=false`) set.
 - [ ] `ShipAdminApi__BaseUrl`, `ShipAdminAuth__TokenUrl`/`__TenantId`/`__ClientSecret` set (Admin-API mode).
-- [ ] `VAULT_ADDR` + `VAULT_TOKEN` set (worker exits otherwise); token has `list` + `read` (§4.3);
-      at least one client secret exists under `ses/clients/`.
-- [ ] Each Vault client folder name equals the `clientId` carried on the records.
+- [ ] `AppSettings:Clients` lists each client (`ClientId`/`Status=ACTIVE`); the ISW injector overrides every
+      `AppSettings__Clients__{n}__ClientSecret` (and `__HmacSecret` where used) — no placeholders remain.
+- [ ] Each `AppSettings:Clients[n].ClientId` equals the `clientId` carried on the records.
 
 ---
 
@@ -278,9 +275,9 @@ FeatureFlag: Using SHIP Admin API adapters (HTTP).
 |---|---|---|
 | App exits at startup naming `AuthSettings`/`FhirRouting`/`AppSettings` | Required config blank | Set the named key (see §5) |
 | App exits: `SeSClient:TenantId … is required` | Tenant identity missing | Set `SeSClient__TenantId` |
-| Nothing transmitted; `Vault … found no registered clients` | Vault empty or token lacks `list`/`read` | Add secrets / fix policy / token, restart |
-| One client's records stay `Pending`, logged as skipped | Client not loaded (not under the prefix, unreadable secret, or added after startup) | Add/fix the Vault secret + restart |
-| All sends `401`/token errors | Identity endpoint/secret wrong, or per-client secret missing in Vault | Verify `AuthSettings`/Vault secret |
+| Nothing transmitted; `No ACTIVE clients … loaded from AppSettings:Clients` | Placeholders not overridden by the ISW injector, or all clients non-`ACTIVE` | Fix the injected env vars / `Status`, restart |
+| One client's records stay `Pending`, logged as skipped | Client not loaded (non-`ACTIVE`, secret still a placeholder, or added after startup) | Fix the client's config/injected secret + restart |
+| All sends `401`/token errors | Identity endpoint wrong, or the injected per-client `ClientSecret` is wrong | Verify `AuthSettings`/the injected `AppSettings__Clients__{n}__ClientSecret` |
 | Records requeue then `Failed` | SHIP FHIR endpoint unreachable or rejecting | Check `FhirRouting` base URLs / SHIP health |
 | Worker self-pauses (`Client … not active`) | Admin API reports tenant inactive | Activate the tenant in SHIP Admin |
 | App exits in DirectDB mode | `UseShipAdminApi=false` but `ShipServerSqlDb` misconfigured | Set the connection string or use Admin-API mode |

@@ -32,6 +32,23 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
         Task BulkUpdateStatusAsync<T>(IReadOnlyDictionary<string, RecordStatusUpdate> updates) where T : FhirSyncRecord, new();
 
         Task<PatientSyncRecord?> GetPatientByTransactionIdAsync(string transactionId, CancellationToken ct = default);
+
+        /// <summary>
+        /// Ensures the status-event store's schema/indexes exist — notably a <b>unique constraint on
+        /// transactionId</b> (Mongo: a partial unique index over non-empty transactionIds; Postgres: a partial
+        /// unique index) so the transmitter probe flow and the real SHIP callback converge on a single document
+        /// per transaction instead of racing to create duplicates. Idempotent; safe to call once at startup.
+        /// </summary>
+        Task EnsureStatusEventSchemaAsync(CancellationToken ct = default);
+
+        /// <summary>
+        /// Inserts the initial PENDING status event for a send, keyed by transactionId, <b>only if one does
+        /// not already exist</b>. If an event for the same transactionId is already present (a re-seed, or the
+        /// real SHIP callback landed first), this is a no-op — the flows converge on that one document rather
+        /// than creating a duplicate that would trigger a second EMR callback.
+        /// </summary>
+        Task SeedPendingStatusEventAsync(StatusEvent ev, CancellationToken ct = default);
+
         Task InsertStatusEventAsync(StatusEvent ev, CancellationToken ct = default);
 
         // ── EMR callback delivery ──
@@ -48,8 +65,19 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
         Task<bool> TryClaimStatusProbeAsync(string id, CancellationToken ct = default);
         Task MarkProbeSucceededAsync(string id, CancellationToken ct = default);
         Task MarkProbeRetryAsync(string id, string? error, TimeSpan delay, bool abandon, CancellationToken ct = default);
-        /// <summary>Promote a PENDING event to SUCCESS and attach the probe payload (JSON).</summary>
-        Task MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, CancellationToken ct = default);
+        /// <summary>
+        /// Promote a <b>still-PENDING</b> event to SUCCESS and attach the probe payload (JSON). The update is
+        /// guarded by the current status: if the real SHIP callback already resolved the event to a terminal
+        /// status, nothing is changed and this returns <c>false</c> (the probe stands down rather than
+        /// overwriting authoritative callback data or re-triggering delivery). Returns <c>true</c> when the
+        /// probe result was the one that promoted the event.
+        /// <para>
+        /// <paramref name="shipId"/> is the SHIP identifier extracted from the probe response; when present it
+        /// is persisted onto the event so the EMR callback carries the same <c>shipId</c> a real SHIP callback
+        /// would. When null/blank the existing value is left untouched.
+        /// </para>
+        /// </summary>
+        Task<bool> MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, string? shipId, CancellationToken ct = default);
     }
 
     /// <summary>A status mutation to apply to a sync record (storage-neutral; replaces a MongoDB tuple).</summary>

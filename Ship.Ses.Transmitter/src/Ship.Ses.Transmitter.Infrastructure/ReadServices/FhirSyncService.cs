@@ -344,7 +344,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     ResourceType = rec.ResourceType,                // you can refine if you store per-item type
                     ResourceId = resourceIdOverride ?? rec.ResourceId,
                     ShipId = string.Empty,
-                    Status = "PENDING",
+                    Status = ShipCallbackStatus.Pending,
                     Message = "Awaiting callback",
                     ReceivedAtUtc = DateTime.UtcNow,
                     Source = "SHIP",
@@ -367,7 +367,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     ProbeLastError = null
                 };
 
-                await _repository.InsertStatusEventAsync(evt, token);
+                // Insert-if-absent (keyed by transactionId): converges with the real SHIP callback instead of
+                // racing to create a duplicate status event that would trigger a second EMR callback.
+                await _repository.SeedPendingStatusEventAsync(evt, token);
                 _logger.LogInformation("📬 Seeded PENDING StatusEvent txn={Txn} resId={ResId}", txn, evt.ResourceId ?? "<null>");
             }
             catch (Exception ex)
@@ -385,7 +387,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     ResourceType = rec.ResourceType,
                     ResourceId = resourceIdOverride ?? rec.ResourceId,
                     ShipId = string.Empty,
-                    Status = "ERROR",
+                    Status = ShipCallbackStatus.Error,
                     Message = message,
                     ReceivedAtUtc = DateTime.UtcNow,
                     Source = "SHIP",
@@ -395,7 +397,12 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     CorrelationId = rec.CorrelationId ?? string.Empty,
                     FacilityId = rec.FacilityId ?? string.Empty,
                     ClientId = rec.ClientId,
-                    ShipService = rec.ShipService
+                    ShipService = rec.ShipService,
+
+                    // ERROR is a terminal outcome the EMR should receive. Persist the callback target now (as
+                    // TrySeedPendingAsync does) so EmrCallbackWorker can deliver it — there is no transactionId
+                    // on a hard failure, so the patient-lookup fallback wouldn't resolve a URL. (Finding 5.2)
+                    EmrTargetUrl = rec.ClientEMRCallbackUrl
                 };
 
                 await _repository.InsertStatusEventAsync(evt, token);
