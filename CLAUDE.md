@@ -63,19 +63,24 @@ Mongo types internal.
 - `SeSClient.TenantId` — tenant/deployment identity for Admin API, heartbeat, metrics, sync
   enable/disable (legacy `ClientId` key still binds as a fallback). **Not** used to select outbound
   FHIR credentials — those are resolved per-record by `clientId`.
-- `ClientCredentials.Source` — `Config` (single-client fallback via `AuthSettings`) or `Vault`
-  (per-`clientId` secret from `secret/ses/clients/{clientId}`). See `docs/multi-client/SECRETS-AND-CONFIG.md`.
-- `AuthSettings` — non-secret outbound FHIR defaults (token endpoint + grant type) and the `Config`
-  fallback credential. Outbound tokens are acquired per-`clientId` via `IFhirTokenService` (cached per
-  `(clientId, scope)`); scope is route-derived.
+- `AppSettings.Clients[]` — the per-`clientId` outbound credential directory: `ClientId`,
+  `ClientSecret`, `HmacSecret`, `Status` (`ACTIVE` only are loaded). Committed values are **placeholders**;
+  the real secrets are injected at runtime as env vars (`AppSettings__Clients__{n}__ClientSecret` /
+  `__HmacSecret`) by the org's ISW Vault agent. Resolved by `ConfigClientCredentialProvider` at startup —
+  **no Vault API calls**. See `docs/multi-client/SECRETS-AND-CONFIG.md`.
+- `AppSettings.Hmac` — shared HMAC settings (header names, algorithm, clock skew, bypass paths); per-client
+  keys live on each `Clients[]` entry.
+- `AuthSettings` — non-secret outbound FHIR defaults (token endpoint + grant type + scope). Outbound tokens
+  are acquired per-`clientId` via `IFhirTokenService` (cached per `(clientId, scope)`); scope is
+  route-derived. `AuthSettings.ClientSecret` is unused (per-client secrets come from `AppSettings.Clients`).
 - `FhirRouting` — per-target `BaseUrl`/`Scope`/`ClientCert`/resource lists (routing).
 - `ShipAdminApi` / `ShipAdminAuth` — tenant-level Admin API + heartbeat/metrics auth.
 - `StatusProbe`, `EmrCallback` — worker tuning.
 - `SourceDbSettings` — MongoDB (sync records + status events). `AppSettings.*` — MySQL/PG staging via EF.
 
-> ⚠️ **Secrets are currently committed in plaintext** in `appsettings.json` (client secret,
-> DB passwords). Do not add more. The multi-client work moves these to Vault. Treat the
-> committed values as compromised / to-be-rotated.
+> ⚠️ **Do not commit secret values.** `appsettings.json` carries only placeholders; real secrets
+> (client secrets, HMAC keys, DB passwords) are injected at runtime as env vars by the ISW Vault agent.
+> Values committed in git history must be treated as compromised / to-be-rotated.
 
 ## Data stores
 
@@ -100,8 +105,10 @@ dotnet test  Ship.Ses.Transmitter/Ship.Ses.Transmitter.sln
 
 - Target frameworks: libraries/tests `net9.0`; the Worker has both `net8.0`/`net9.0` obj output —
   confirm the intended TFM before changing.
-- Test projects use **xUnit** + `coverlet.collector`. They exist in the solution but contain no
-  tests yet (see `docs/multi-client/BUILD-PLAN.md`).
+- Test projects use **xUnit** + `coverlet.collector`.
+- The solution file references a `Ship.Ses.Transmitter.WebApi` project that does not exist on disk, so
+  `dotnet build`/`test` on the `.sln` fails to restore. Build/test the individual projects instead
+  (e.g. the Worker `.csproj` for source, each `tests/*.UnitTests.csproj` for tests).
 
 ## Conventions
 
@@ -124,7 +131,11 @@ Design rules to honor:
 1. The same client credential is used across all SHIP target systems (PDS/SCR/…).
 2. Credential resolution is **per `clientId` only**, not per target system.
 3. `targetSystem`/`shipService` is routing/processing only — never credential selection.
-4. Client-specific secrets must not live in instance `appsettings.json`.
-5. Client secrets resolve dynamically from Vault: `secret/ses/clients/{clientId}`.
+4. Client-specific secret **values** must not be committed in instance `appsettings.json` (placeholders
+   only). They are injected at runtime by the org's ISW secret-injection mechanism (a Vault agent) as
+   environment variables and bound over the placeholders.
+5. The application resolves client secrets from its own **configuration** (`AppSettings:Clients` — per
+   `clientId` `ClientSecret`/`HmacSecret`/`Status`). It makes **no Vault API calls**, knows no Vault
+   address/token, and handles no `X-Vault-Token`.
 6. Non-secret settings may remain in configuration.
 </content>

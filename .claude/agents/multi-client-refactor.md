@@ -1,6 +1,6 @@
 ---
 name: multi-client-refactor
-description: Use when implementing or reviewing the SeS Transmitter's move from single-client to client-aware credential resolution. Knows the design contract (per-clientId creds, routing-only targetSystem, Vault secrets) and the phased build plan. Use for tasks touching TokenService, FhirApiService, FhirSyncService, AuthSettings, credential resolution, or the Mongo→storage abstraction.
+description: Use when implementing or reviewing the SeS Transmitter's move from single-client to client-aware credential resolution. Knows the design contract (per-clientId creds, routing-only targetSystem, ISW-injected config secrets) and the phased build plan. Use for tasks touching TokenService, FhirApiService, FhirSyncService, AuthSettings, credential resolution, or the Mongo→storage abstraction.
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: inherit
 ---
@@ -13,8 +13,9 @@ You implement the multi-client refactor of the **SeS Transmitter**. Read these b
 2. Credential resolution is **per `clientId` only** — never per target system.
 3. `targetSystem`/`ShipService` controls **routing/processing only**, never credential selection.
    Do not change `FhirRoutingSettings.ResolveRoute`'s routing logic.
-4. Client-specific secrets must not live in instance `appsettings.json`.
-5. Client secrets resolve from Vault at `secret/ses/clients/{clientId}`.
+4. Client-specific secret **values** must not be committed in `appsettings.json` (placeholders only).
+5. Client secrets resolve from configuration (`AppSettings:Clients` — per `clientId`); their values are
+   injected as env vars by the org's ISW Vault agent. The app makes **no** Vault API calls.
 6. Non-secret settings may remain in configuration.
 
 ## How to work

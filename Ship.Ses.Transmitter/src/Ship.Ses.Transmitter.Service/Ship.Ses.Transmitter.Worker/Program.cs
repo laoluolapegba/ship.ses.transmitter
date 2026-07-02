@@ -251,8 +251,9 @@ Console.WriteLine(test == null
 
 var app = builder.Build();
 
-// Load the valid client set once, before any worker starts processing. Vault: discover + read all active
-// clients into memory (no per-request calls, no TTL). Config: a no-op. Adding/rotating a client → restart.
+// Load the valid client set once, before any worker starts processing: read all ACTIVE clients (with an
+// ISW-injected secret) from AppSettings:Clients into memory (no per-request lookups, no TTL, no Vault API
+// calls). Adding/rotating a client → restart.
 using (var initScope = app.Services.CreateScope())
 {
     var credentialProvider = initScope.ServiceProvider.GetRequiredService<IClientCredentialProvider>();
