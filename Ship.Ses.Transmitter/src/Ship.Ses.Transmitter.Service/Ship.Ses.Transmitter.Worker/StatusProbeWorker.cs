@@ -128,16 +128,29 @@ namespace Ship.Ses.Transmitter.Worker
                 {
                     var payloadJson = TryMakeJsonPayload(res);
 
-                    // ✅ Update the existing PENDING event to SUCCESS and attach payload (JSON; adapter converts)
-                    await repo.MarkProbeSuccessAndAttachPayloadAsync(
+                    // ✅ Promote the STILL-PENDING event to SUCCESS and attach payload (JSON; adapter converts).
+                    // Guarded: returns false if the real SHIP callback already resolved this event — in which
+                    // case the probe stands down (it must not overwrite the callback result or re-trigger delivery).
+                    var promoted = await repo.MarkProbeSuccessAndAttachPayloadAsync(
                         ev.Id,
                         "Resource details processed successfully (probe)",
                         payloadJson,
                         ct);
 
-                    _logger.LogInformation(
-                        "✅ Probe success UPDATED existing StatusEvent for {ResourceType}/{ResourceId} (txn={Txn}).",
-                        ev.ResourceType, ev.ResourceId, ev.TransactionId);
+                    if (promoted)
+                    {
+                        _logger.LogInformation(
+                            "✅ Probe success UPDATED existing StatusEvent for {ResourceType}/{ResourceId} (txn={Txn}).",
+                            ev.ResourceType, ev.ResourceId, ev.TransactionId);
+                    }
+                    else
+                    {
+                        // The actual callback beat the probe; just close out the probe flow so we stop polling.
+                        await repo.MarkProbeSucceededAsync(ev.Id, ct);
+                        _logger.LogInformation(
+                            "↩️ Probe stood down for {ResourceType}/{ResourceId} (txn={Txn}): event already resolved by the SHIP callback.",
+                            ev.ResourceType, ev.ResourceId, ev.TransactionId);
+                    }
                     return;
                 }
 

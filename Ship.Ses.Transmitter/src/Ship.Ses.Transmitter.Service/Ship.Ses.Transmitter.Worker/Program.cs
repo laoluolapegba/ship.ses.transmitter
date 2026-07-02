@@ -259,6 +259,11 @@ using (var initScope = app.Services.CreateScope())
     var credentialProvider = initScope.ServiceProvider.GetRequiredService<IClientCredentialProvider>();
     credentialProvider.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
 
+    // Ensure the status-event store enforces transactionId uniqueness so the probe flow and the real SHIP
+    // callback converge on ONE document per transaction (prevents duplicate EMR callbacks). Idempotent.
+    var syncStore = initScope.ServiceProvider.GetRequiredService<IFhirSyncStore>();
+    syncStore.EnsureStatusEventSchemaAsync(CancellationToken.None).GetAwaiter().GetResult();
+
     // Log the effective FHIR routing once at startup so a misconfigured destination — or, critically, a
     // missing callback URL (the Ingestor ack endpoint SHIP posts results back to, e.g.
     // http://{host}/api/v1/patient/ack) — is obvious in the startup logs rather than surfacing later as

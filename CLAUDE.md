@@ -85,7 +85,10 @@ Mongo types internal.
 ## Data stores
 
 - **MongoDB** (`SourceDbSettings`) — `transformed_pool_patients`, `transformed_pool_resources`,
-  `fhirstatusevents`. Accessed via `MongoSyncRepository : IMongoSyncRepository`.
+  `fhirstatusevents`. Accessed via `MongoSyncRepository : IFhirSyncStore`. `fhirstatusevents` has a
+  **partial unique index on `transactionId`** (non-empty), ensured at startup via
+  `EnsureStatusEventSchemaAsync`, so the probe flow and the real SHIP callback converge on one document per
+  transaction and can't produce duplicate EMR callbacks.
 - **MySQL/Postgres/SqlServer** (EF, `AppSettings.ShipServerSqlDb` + `EmrDb`) — client sync config
   (when `UseShipAdminApi=false`) and the extractor staging DB updates.
 

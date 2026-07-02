@@ -367,7 +367,9 @@ namespace Ship.Ses.Transmitter.Infrastructure.ReadServices
                     ProbeLastError = null
                 };
 
-                await _repository.InsertStatusEventAsync(evt, token);
+                // Insert-if-absent (keyed by transactionId): converges with the real SHIP callback instead of
+                // racing to create a duplicate status event that would trigger a second EMR callback.
+                await _repository.SeedPendingStatusEventAsync(evt, token);
                 _logger.LogInformation("📬 Seeded PENDING StatusEvent txn={Txn} resId={ResId}", txn, evt.ResourceId ?? "<null>");
             }
             catch (Exception ex)

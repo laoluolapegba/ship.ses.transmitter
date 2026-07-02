@@ -219,8 +219,8 @@ The final result is resolved one of two ways; both converge on flipping the `Sta
 
 **Path A — async callback (happy path).** SHIP processes the resource and POSTs the result to the
 `callbackUrl` sent in the envelope. That hits the **Ingestor** (the companion service), which resolves the
-client from the JWT and updates the matching `fhirstatusevents` document to `Status = "SUCCESS"`. *(This
-lives in the Ingestor repo; the Transmitter only consumes the resulting SUCCESS event.)*
+client from the JWT and updates the matching `fhirstatusevents` document to its terminal status. *(This
+lives in the Ingestor repo; the Transmitter only consumes the resulting event.)*
 
 **Path B — probe fallback.** If no callback lands within the timeout, `StatusProbeWorker`:
 
@@ -231,6 +231,15 @@ lives in the Ingestor repo; the Transmitter only consumes the resulting SUCCESS 
     (`Source = "PROBE"`) and attaches the payload.
   - `404` → stop probing (resource genuinely absent).
   - other/5xx/exception → bounded retry with backoff, then abandon.
+
+> **Convergence & idempotency (Path A vs Path B race).** `fhirstatusevents` has a **partial unique index on
+> `transactionId`** (`EnsureStatusEventSchemaAsync`, created at startup), so the probe and the real SHIP
+> callback act on **one** document, not two. The PENDING seed is **insert-if-absent**
+> (`SeedPendingStatusEventAsync`), and the probe promotion is **guarded** — `MarkProbeSuccessAndAttachPayloadAsync`
+> only promotes while the event is still `PENDING` and returns `false` if the callback already resolved it, so
+> the probe stands down instead of overwriting authoritative callback data. Because a second document can't
+> exist and delivery is gated on `CallbackStatus`, the actual callback can't produce a **second EMR callback**
+> once the probe has delivered an equivalent result.
 
 ### Stage 11 — Forwarding the result to the EMR
 

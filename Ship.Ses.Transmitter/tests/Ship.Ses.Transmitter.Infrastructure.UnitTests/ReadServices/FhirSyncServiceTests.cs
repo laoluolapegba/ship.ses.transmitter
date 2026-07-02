@@ -42,6 +42,8 @@ public class FhirSyncServiceTests
 
         _repo.Setup(r => r.InsertStatusEventAsync(It.IsAny<StatusEvent>(), It.IsAny<CancellationToken>()))
              .Returns(Task.CompletedTask);
+        _repo.Setup(r => r.SeedPendingStatusEventAsync(It.IsAny<StatusEvent>(), It.IsAny<CancellationToken>()))
+             .Returns(Task.CompletedTask);
 
         // Capture every status the service tries to persist so we can assert on it.
         _repo.Setup(r => r.BulkUpdateStatusAsync<PatientSyncRecord>(
