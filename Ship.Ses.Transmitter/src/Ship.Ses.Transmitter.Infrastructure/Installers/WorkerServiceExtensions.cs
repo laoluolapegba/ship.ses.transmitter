@@ -61,7 +61,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             });
 
             //  Register Repositories & Services
-            services.AddScoped<IMongoSyncRepository, MongoSyncRepository>();
+            services.AddScoped<IFhirSyncStore, MongoSyncRepository>();
             services.AddScoped<IFhirSyncService, FhirSyncService>();
 
             //services.AddScoped<ISyncMetricsCollector, ClientSyncMetricsCollector>();
@@ -72,15 +72,45 @@ namespace Ship.Ses.Transmitter.Infrastructure.Installers
             {
                 var msSqlSettings = appSettings.ShipServerSqlDb;
             }
-            services.Configure<AuthSettings>(configuration.GetSection("AuthSettings"));
-            services.AddHttpClient<TokenService>();
-            services.AddSingleton<TokenService>();
+            // Outbound FHIR authorization defaults. Scope lives here (not per FHIR route): the same
+            // credential/scope authenticates to every SHIP target system. Fail fast if misconfigured.
+            services.AddOptions<AuthSettings>()
+                .Bind(configuration.GetSection("AuthSettings"))
+                .Validate(a => !string.IsNullOrWhiteSpace(a.TokenEndpoint), "AuthSettings:TokenEndpoint is required")
+                .Validate(a => !string.IsNullOrWhiteSpace(a.Scope),
+                    "AuthSettings:Scope is required (outbound authorization scope is no longer set per FHIR route)")
+                .ValidateOnStart();
             services.AddSingleton<AdminTokenService>();
+
+            // Multi-client outbound auth: credential resolved per clientId, token cached per (clientId, scope).
+            services.AddHttpClient("FhirTokens");
+            services.AddSingleton<IFhirTokenService, CachedFhirTokenService>();
+
+            // Per-client outbound credentials come from Vault, configured via OS environment variables
+            // (VAULT_ADDR, VAULT_TOKEN, VAULT_HMAC_*) — the same mechanism the SeS Ingestor uses, so there
+            // is no appsettings section. All registered clients under the path prefix are discovered and
+            // read once at startup (no per-request Vault calls, no TTL). VAULT_ADDR/VAULT_TOKEN are
+            // required: the worker exits at startup if they are unset.
+            var vaultSettings = VaultClientSecretSettings.FromEnvironment();
+            if (!vaultSettings.IsConfigured)
+                throw new InvalidOperationException(
+                    "Vault is not configured: set the VAULT_ADDR and VAULT_TOKEN environment variables " +
+                    "(per-client outbound credentials are loaded from Vault at startup).");
+
+            services.AddSingleton(vaultSettings);
+            services.AddHttpClient("Vault", client =>
+            {
+                client.BaseAddress = new Uri(vaultSettings.Address!.TrimEnd('/') + "/");
+                client.Timeout = TimeSpan.FromSeconds(vaultSettings.RequestTimeoutSeconds);
+            });
+            services.AddSingleton<IVaultSecretReader, HttpVaultSecretReader>();
+            services.AddSingleton<IClientCredentialProvider, VaultClientCredentialProvider>();
+            Console.WriteLine($"ClientCredentials: Vault provider (env-configured) at {vaultSettings.Address}, prefix '{vaultSettings.ListPrefix()}'.");
 
             services.Configure<SeSClientOptions>(configuration.GetSection("SeSClient"));
 
             var sesSetting = configuration.GetSection("SeSClient");
-            Console.WriteLine($"  ClientId: {sesSetting["ClientId"]}");
+            Console.WriteLine($"  TenantId: {sesSetting["TenantId"] ?? sesSetting["ClientId"]}");
 
             static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy() =>
     HttpPolicyExtensions

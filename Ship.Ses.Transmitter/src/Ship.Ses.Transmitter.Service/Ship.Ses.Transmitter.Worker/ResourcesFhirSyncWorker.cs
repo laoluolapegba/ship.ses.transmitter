@@ -46,7 +46,7 @@ namespace Ship.Ses.Transmitter.Worker
             _writer = writer ?? throw new ArgumentNullException(nameof(writer));
 
             var opts = clientOptions?.Value ?? throw new ArgumentNullException(nameof(clientOptions));
-            _clientId = opts.ClientId ?? throw new ArgumentNullException(nameof(opts.ClientId));
+            _clientId = opts.EffectiveTenantId ?? throw new ArgumentNullException(nameof(opts.TenantId), "SeSClient:TenantId (or legacy ClientId) is required.");
 
             _logger.LogInformation("ResourcesFhirSyncWorker starting with mode: {Mode}",
                 opts.UseShipAdminApi ? "AdminAPI" : "DirectDB");
@@ -151,8 +151,8 @@ namespace Ship.Ses.Transmitter.Worker
 
                 var result = await svc.ProcessPendingRecordsAsync<T>(token);
 
-                _logger.LogInformation("✅ {RecordType} processed from {Collection}: Total={Total}, Synced={Synced}, Failed={Failed}",
-                    recordType, collection, result.Total, result.Synced, result.Failed);
+                _logger.LogInformation("✅ {RecordType} processed from {Collection}: Total={Total}, Synced={Synced}, Requeued={Requeued}, Failed={Failed}",
+                    recordType, collection, result.Total, result.Synced, result.Requeued, result.Failed);
             }
         }
 

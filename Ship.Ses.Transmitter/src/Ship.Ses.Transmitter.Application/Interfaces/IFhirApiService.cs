@@ -13,6 +13,7 @@ namespace Ship.Ses.Transmitter.Application.Sync
     {
         public Task<FhirApiResponse> SendAsync(
             FhirOperation operation,
+            string clientId,
             string resourceType,
             string resourceId = null,
             string jsonPayload = null,

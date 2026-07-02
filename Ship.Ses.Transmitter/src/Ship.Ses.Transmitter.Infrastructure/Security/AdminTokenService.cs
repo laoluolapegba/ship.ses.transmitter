@@ -48,7 +48,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
 
             var payload = new
             {
-                clientId = _opts.ClientId,
+                clientId = _opts.TenantId,
                 clientSecret = _opts.ClientSecret,
                 grantType = string.IsNullOrWhiteSpace(_opts.GrantType) ? "client_credentials" : _opts.GrantType,
                 scope = _opts.Scope
@@ -61,8 +61,8 @@ namespace Ship.Ses.Transmitter.Infrastructure.Security
             };
             req.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            _log.LogInformation("🔐 Requesting Admin API token: endpoint={Endpoint}, clientId={ClientId}",
-                _opts.TokenUrl, Mask(_opts.ClientId));  //
+            _log.LogInformation("🔐 Requesting Admin API token: endpoint={Endpoint}, tenantId={TenantId}",
+                _opts.TokenUrl, Mask(_opts.TenantId));  //
 
             using var resp = await _http.SendAsync(req, ct);
             var body = await resp.Content.ReadAsStringAsync(ct);
