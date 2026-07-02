@@ -71,8 +71,13 @@ namespace Ship.Ses.Transmitter.Application.Interfaces
         /// status, nothing is changed and this returns <c>false</c> (the probe stands down rather than
         /// overwriting authoritative callback data or re-triggering delivery). Returns <c>true</c> when the
         /// probe result was the one that promoted the event.
+        /// <para>
+        /// <paramref name="shipId"/> is the SHIP identifier extracted from the probe response; when present it
+        /// is persisted onto the event so the EMR callback carries the same <c>shipId</c> a real SHIP callback
+        /// would. When null/blank the existing value is left untouched.
+        /// </para>
         /// </summary>
-        Task<bool> MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, CancellationToken ct = default);
+        Task<bool> MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, string? shipId, CancellationToken ct = default);
     }
 
     /// <summary>A status mutation to apply to a sync record (storage-neutral; replaces a MongoDB tuple).</summary>

@@ -14,6 +14,7 @@ namespace Ship.Ses.Transmitter.Worker
     using Ship.Ses.Transmitter.Domain.Patients;
     using Ship.Ses.Transmitter.Domain.Sync;
     using Ship.Ses.Transmitter.Domain.SyncModels;
+    using Ship.Ses.Transmitter.Infrastructure.ReadServices;
     using Ship.Ses.Transmitter.Infrastructure.Settings;
     using System.Net.Http.Headers;
     using System.Text.Json;
@@ -128,6 +129,14 @@ namespace Ship.Ses.Transmitter.Worker
                 {
                     var payloadJson = TryMakeJsonPayload(res);
 
+                    // Extract the SHIP identifier from the response (data.identifier[] where
+                    // type.coding[].code == SHIP_ID) so the probe-driven EMR callback carries the same shipId
+                    // an actual SHIP callback would, instead of the blank seeded value.
+                    var shipId = ShipIdExtractor.TryExtractShipId(res.Raw);
+                    if (string.IsNullOrWhiteSpace(shipId))
+                        _logger.LogWarning("⚠️ Probe response for txn={Txn} had no SHIP_ID identifier; EMR callback shipId will be blank.",
+                            ev.TransactionId);
+
                     // ✅ Promote the STILL-PENDING event to SUCCESS and attach payload (JSON; adapter converts).
                     // Guarded: returns false if the real SHIP callback already resolved this event — in which
                     // case the probe stands down (it must not overwrite the callback result or re-trigger delivery).
@@ -135,6 +144,7 @@ namespace Ship.Ses.Transmitter.Worker
                         ev.Id,
                         "Resource details processed successfully (probe)",
                         payloadJson,
+                        shipId,
                         ct);
 
                     if (promoted)

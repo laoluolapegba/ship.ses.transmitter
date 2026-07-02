@@ -303,7 +303,7 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             return StatusEventCol.UpdateOneAsync(x => x.Id == id, upd, cancellationToken: ct);
         }
 
-        public async Task<bool> MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, CancellationToken ct = default)
+        public async Task<bool> MarkProbeSuccessAndAttachPayloadAsync(string id, string message, string? payloadJson, string? shipId, CancellationToken ct = default)
         {
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
 
@@ -330,6 +330,11 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
                 .Set(x => x.ProbeStatus, "Succeeded")
                 .Set(x => x.ProbeLastError, null)
                 .Set(x => x.ProbeNextAttemptAt, null);
+
+            // Persist the SHIP identifier extracted from the probe response so the EMR callback carries the
+            // same shipId a real SHIP callback would. Only set when present — never blank out an existing value.
+            if (!string.IsNullOrWhiteSpace(shipId))
+                update = update.Set(x => x.ShipId, shipId);
 
             var res = await col.UpdateOneAsync(filter, update, cancellationToken: ct);
             return res.ModifiedCount == 1;
