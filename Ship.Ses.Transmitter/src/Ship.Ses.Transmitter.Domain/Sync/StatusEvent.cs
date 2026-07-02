@@ -24,7 +24,9 @@ namespace Ship.Ses.Transmitter.Domain.Sync
         public string ShipId { get; set; } = default!;
 
         [BsonElement("status")]
-        public string Status { get; set; } = default!;           // SUCCESS|FAILED|PENDING
+        // PENDING (awaiting callback) or a terminal MPI outcome: SUCCESS|ERROR|REJECTED|CONFLICT|DUPLICATE.
+        // See ShipCallbackStatus. Terminal statuses are eligible for EMR callback delivery.
+        public string Status { get; set; } = default!;
 
         [BsonElement("message")]
         public string Message { get; set; } = default!;

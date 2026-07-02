@@ -111,10 +111,13 @@ namespace Ship.Ses.Transmitter.Infrastructure.Persistance.Configuration.Domain
             var col = _database.GetCollection<StatusEvent>("fhirstatusevents");
             var now = DateTime.UtcNow;
 
+            // Deliver EVERY terminal SHIP/MPI outcome (SUCCESS, ERROR, REJECTED, CONFLICT, DUPLICATE) — not
+            // only successes — so the EMR always receives the final result. PENDING (awaiting-callback) is
+            // excluded because it is not a terminal outcome.
             var filter = Builders<StatusEvent>.Filter.And(
                 Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Succeeded"),
                 Builders<StatusEvent>.Filter.Ne(x => x.CallbackStatus, "Failed"),
-                Builders<StatusEvent>.Filter.Eq(x => x.Status, "SUCCESS"),
+                Builders<StatusEvent>.Filter.In(x => x.Status, ShipCallbackStatus.Terminal),
                 Builders<StatusEvent>.Filter.Lte(x => x.CallbackNextAttemptAt, now)
             );
 

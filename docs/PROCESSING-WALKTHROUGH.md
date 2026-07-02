@@ -8,7 +8,8 @@ the client's EMR. This is the outbound half of the SHIP SeS integration.
 > SHIP answers the outbound `POST` synchronously with **`202 Accepted` + a `transactionId`** — that's
 > the "I've queued it" acknowledgement, **not** the final clinical outcome. The real result arrives
 > later, asynchronously: either SHIP calls back (received by the companion **Ingestor**, which writes a
-> `SUCCESS` status event) or the Transmitter's **probe** worker pulls it. So the flow has two halves:
+> terminal status event — `SUCCESS`, `ERROR`, `REJECTED`, `CONFLICT` or `DUPLICATE`) or the Transmitter's
+> **probe** worker pulls it. So the flow has two halves:
 >
 > - **Send half** — `ResourcesFhirSyncWorker → FhirSyncService → FhirApiService` (Stages 1–9).
 > - **Acknowledgement half** — the `StatusEvent` state machine, `StatusProbeWorker`, `EmrCallbackWorker`
@@ -38,7 +39,7 @@ the client's EMR. This is the outbound half of the SHIP SeS integration.
 | `Infrastructure/Security/ConfigClientCredentialProvider` | Loads per-client secrets from config (`AppSettings:Clients`, ISW-injected) at startup; resolves them from memory. |
 | `Application/Interfaces/IFhirSyncStore` (Mongo adapter `MongoSyncRepository`) | Storage-neutral persistence for records + status events. |
 | `Worker/StatusProbeWorker` | Probes SHIP for records that got no callback within a timeout. |
-| `Worker/EmrCallbackWorker` | Delivers `SUCCESS` results back to the client's EMR callback URL. |
+| `Worker/EmrCallbackWorker` | Delivers **terminal** results (`SUCCESS`/`ERROR`/`REJECTED`/`CONFLICT`/`DUPLICATE`) back to the client's EMR callback URL. |
 
 Two record pools live in MongoDB: `PatientSyncRecord` (`transformed_pool_patients`) and
 `GenericResourceSyncRecord` (`transformed_pool_resources`, all non-patient resource types). Status
@@ -233,10 +234,13 @@ lives in the Ingestor repo; the Transmitter only consumes the resulting SUCCESS 
 
 ### Stage 11 — Forwarding the result to the EMR
 
-Once a `StatusEvent` is `Status = "SUCCESS"`, `EmrCallbackWorker` closes the loop:
+Once a `StatusEvent` reaches a **terminal** outcome — any of `SUCCESS`, `ERROR`, `REJECTED`, `CONFLICT`,
+`DUPLICATE` (the MPI-defined set, `ShipCallbackStatus.Terminal`) — `EmrCallbackWorker` closes the loop so
+the EMR receives the **final outcome, not only successes**:
 
-- `FetchDueEmrCallbacksAsync` finds `SUCCESS` events whose `CallbackStatus` is not `Succeeded`/`Failed` and
-  that are due; `TryClaimEmrCallbackAsync` claims one (`CallbackStatus → InFlight`).
+- `FetchDueEmrCallbacksAsync` finds events with a **terminal** `Status` whose `CallbackStatus` is not
+  `Succeeded`/`Failed` and that are due (`PENDING` is excluded — it is not an outcome);
+  `TryClaimEmrCallbackAsync` claims one (`CallbackStatus → InFlight`).
 - Resolves the target URL (the persisted `EmrTargetUrl`, else a patient-by-txn fallback).
 - **SSRF guard** (`ICallbackUrlValidator`, opt-in via `EmrCallback:Validation:Enabled`; scheme sanity is
   always enforced).
@@ -268,7 +272,7 @@ record.Status:        Pending ──send 202──▶ Synced
                           ▲   └─fail <3──┘ (requeue, RetryCount++)
                           └───fail ≥3────▶ Failed
 
-StatusEvent.Status:   (none) ──seed──▶ PENDING ──callback OR probe──▶ SUCCESS
+StatusEvent.Status:   (none) ──seed──▶ PENDING ──callback OR probe──▶ SUCCESS | ERROR | REJECTED | CONFLICT | DUPLICATE  (terminal → deliver to EMR)
 StatusEvent.Callback: Pending ──claim──▶ InFlight ──2xx──▶ Succeeded
                                                   └─fail ≥MaxAttempts─▶ Failed (dead-letter)
 ```

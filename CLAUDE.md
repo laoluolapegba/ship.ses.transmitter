@@ -39,7 +39,7 @@ Mongo types internal.
 | Worker | Responsibility |
 |---|---|
 | `ResourcesFhirSyncWorker` | Main loop: pulls `Pending` records (`PatientSyncRecord`, `GenericResourceSyncRecord`) and sends them via `IFhirSyncService`. Self-enables/disables based on `IClientSyncConfigProvider.IsClientActiveAsync`. |
-| `EmrCallbackWorker` | Polls `fhirstatusevents` for `SUCCESS` events with pending EMR callbacks and POSTs them to the client's EMR callback URL. |
+| `EmrCallbackWorker` | Polls `fhirstatusevents` for **terminal** outcomes (`SUCCESS`/`ERROR`/`REJECTED`/`CONFLICT`/`DUPLICATE` — see `ShipCallbackStatus`) with pending EMR callbacks and POSTs them to the client's EMR callback URL. |
 | `StatusProbeWorker` | For records that got no callback within a timeout, probes SHIP (`GET`) to resolve final status. |
 | `ClientHeartbeatWorker` | Tenant-level heartbeat to the SHIP Admin API. |
 | `MetricsSyncReporterWorker` | Flushes sync metrics to the Admin API. |
